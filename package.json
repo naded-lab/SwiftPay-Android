@@ -1,0 +1,17 @@
+{
+  "name": "swiftpay-android",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SwiftPay wrapped as a native Android app with Capacitor (Stage 1: shell only, no native USSD/SIM yet)",
+  "scripts": {
+    "sync": "cap sync android",
+    "open:android": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.0"
+  }
+}
