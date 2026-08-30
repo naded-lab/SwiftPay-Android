@@ -31,12 +31,32 @@ jobs:
           java-version: '21'
           cache: gradle
 
+      - name: Verify environment
+        run: |
+          java -version
+          javac -version
+          node --version
+          npm --version
+
       - name: Sync Capacitor
         run: npx cap sync android
+
+      - name: Make Gradle executable
+        working-directory: android
+        run: chmod +x gradlew
+
+      - name: Verify Gradle
+        working-directory: android
+        run: ./gradlew --version
 
       - name: Build Debug APK
         working-directory: android
         run: ./gradlew assembleDebug --stacktrace
+
+      - name: Verify APK
+        run: |
+          ls -lh android/app/build/outputs/apk/debug/app-debug.apk
+          file android/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
