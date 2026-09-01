@@ -15,7 +15,9 @@ const STORAGE_KEYS = {
   fav: 'swiftpay_favorites',
   settings: 'swiftpay_settings',
   pins: 'swiftpay_pins',
-  applock: 'swiftpay_applock'
+  applock: 'swiftpay_applock',
+  balance: 'swiftpay_jawwal_balance',
+  sim: 'swiftpay_selected_sim'
 };
 
 function loadFromStorage(key, fallback) {
@@ -56,6 +58,8 @@ let favoritesList = loadFromStorage(STORAGE_KEYS.fav, []);
 let appSettings = loadFromStorage(STORAGE_KEYS.settings, { notifications: true, darkMode: true });
 let savedPins = loadFromStorage(STORAGE_KEYS.pins, { jawwal: '', palpay: '' });
 let appLockState = loadFromStorage(STORAGE_KEYS.applock, { enabled: false, hash: '', salt: '' });
+let balanceState = loadFromStorage(STORAGE_KEYS.balance, { amount: null, raw: '', updatedAt: null, simLabel: '' });
+let selectedSimId = loadFromStorage(STORAGE_KEYS.sim, null);
 
 // ---------- التاريخ والوقت الذكي (يُحسب لحظة العرض من timestamp حقيقي) ----------
 const ARABIC_MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -101,7 +105,9 @@ async function hashPin(pin, salt) {
 function initApp() {
   renderHistory();
   renderFavorites();
+  renderBalanceCard();
   applySettingsUI();
+  refreshSimSelector();
 }
 
 window.addEventListener('load', () => {
@@ -555,18 +561,47 @@ function legacyCopy(text) {
   }
 }
 
-function callCode() {
+async function callCode() {
   const code = document.getElementById('final-ussd-code').innerText;
-  // ملاحظة: لا يجب ترميز * عبر encodeURIComponent، وبعض متصفحات الأندرويد
-  // لا تتعرف على كود USSD إذا كان مُرمّزاً بالكامل. لكن # يُقتطع من رابط
-  // tel: باعتباره بداية "fragment"، لذلك نرمّزه فقط كـ %23 هنا.
-  const dialHref = code.replace(/#/g, '%23');
-  const link = document.createElement('a');
-  link.href = 'tel:' + dialHref;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  armPendingResultWatcher();
+  const callBtn = document.querySelector('#wizard-step-4 .call-btn');
+  if (callBtn) {
+    callBtn.disabled = true;
+    callBtn.dataset.originalText = callBtn.innerHTML;
+    callBtn.innerHTML = '<svg class="icon"><use href="#i-phone-call"></use></svg> جارٍ التنفيذ…';
+  }
+  try {
+    if (window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() &&
+        Capacitor.Plugins && Capacitor.Plugins.UssdDialer) {
+      try {
+        const args = { code };
+        const simId = getSelectedSimId();
+        if (simId !== null) args.subscriptionId = simId;
+        const result = await Capacitor.Plugins.UssdDialer.dial(args);
+        if (result && result.supported && result.permissionGranted && typeof result.response === 'string') {
+          handleNativeUssdResponse(code, result.response);
+          return;
+        }
+        if (result && result.supported && result.permissionGranted === false) {
+          alert('يجب السماح بإذن الاتصال لتنفيذ كود USSD.');
+          return;
+        }
+      } catch (e) {
+        console.warn('SwiftPay: native USSD failed, using dialer fallback', e);
+      }
+    }
+    const dialHref = code.replace(/#/g, '%23');
+    const link = document.createElement('a');
+    link.href = 'tel:' + dialHref;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    armPendingResultWatcher();
+  } finally {
+    if (callBtn) {
+      callBtn.disabled = false;
+      callBtn.innerHTML = callBtn.dataset.originalText || callBtn.innerHTML;
+    }
+  }
 }
 
 // بعد فتح تطبيق الاتصال لا يمكن لأي صفحة ويب معرفة نتيجة عملية USSD الفعلية،
@@ -580,6 +615,151 @@ function armPendingResultWatcher() {
     }
   };
   document.addEventListener('visibilitychange', handler);
+}
+
+// ===== Stage 2: تصنيف رد USSD الحقيقي القادم من sendUssdRequest =====
+// تنبيه مهم: الكلمات بالأسفل أمثلة توضيحية فقط وغير مؤكدة على ردود جوال بي/بال بي
+// الفعلية. لازم تجرب على جهاز حقيقي وترسللي نص الرد عند نجاح/فشل حقيقيين حتى
+// نضبطها. لحد هيك، أي رد ما بينطبق عليه شي بيرجع 'unknown' وبيفتح نفس نافذة
+// التأكيد اليدوية القديمة (سلوك آمن افتراضي، ما في تصنيف تلقائي خاطئ صامت).
+function classifyUssdResponse(text) {
+  const t = (text || '').trim();
+  if (/نجح|تمت العملية بنجاح/.test(t)) return 'success';
+  if (/فشل|غير كافٍ|غير كاف|رصيد غير/.test(t)) return 'failed';
+  return 'unknown';
+}
+
+function handleNativeUssdResponse(code, responseText) {
+  const tx = transactionsList.find(t => String(t.id) === String(lastPendingTxId));
+  if (!tx) return;
+
+  tx.nativeResponse = responseText;
+  const classification = classifyUssdResponse(responseText);
+
+  if (classification === 'unknown') {
+    saveToStorage(STORAGE_KEYS.tx, transactionsList);
+    openConfirmResult(lastPendingTxId);
+    return;
+  }
+
+  tx.status = classification;
+  tx.errorMessage = classification === 'failed' ? 'حسب رد الشبكة الفعلي بعد الاتصال' : null;
+  saveToStorage(STORAGE_KEYS.tx, transactionsList);
+  renderHistory();
+  lastPendingTxId = null;
+}
+
+// ===== فحص الرصيد (جوال بي) =====
+const JAWWAL_BALANCE_CODE = '*110*3#';
+
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+}
+
+function getSelectedSimId() {
+  const value = selectedSimId === null || selectedSimId === undefined || selectedSimId === '' ? null : Number(selectedSimId);
+  return Number.isFinite(value) ? value : null;
+}
+
+function renderBalanceCard() {
+  const amountEl = document.getElementById('jawwal-balance-amount');
+  const updatedEl = document.getElementById('jawwal-balance-updated');
+  const rawEl = document.getElementById('jawwal-balance-raw');
+  if (!amountEl) return;
+  amountEl.textContent = balanceState.amount !== null && balanceState.amount !== undefined ? `${balanceState.amount} ₪` : '—';
+  if (updatedEl) updatedEl.textContent = balanceState.updatedAt ? `آخر تحديث: ${formatSmartDate(balanceState.updatedAt)}${balanceState.simLabel ? ' • ' + balanceState.simLabel : ''}` : 'لم يتم فحص الرصيد بعد';
+  if (rawEl) rawEl.textContent = balanceState.raw || '';
+}
+
+function normalizeArabicDigits(text) {
+  return String(text || '').replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+}
+
+function extractBalance(responseText) {
+  const text = normalizeArabicDigits(responseText);
+  const patterns = [
+    /(?:الرصيد|رصيد|المتبقي|متبقي)[^0-9]{0,20}(\d+(?:[.,]\d{1,2})?)/i,
+    /(\d+(?:[.,]\d{1,2})?)\s*(?:₪|شيكل|شيقل|ILS)/i,
+    /(?:₪|شيكل|شيقل|ILS)\s*(\d+(?:[.,]\d{1,2})?)/i
+  ];
+  for (const pattern of patterns) {
+    const m = text.match(pattern);
+    if (m && m[1]) return m[1].replace(',', '.');
+  }
+  return null;
+}
+
+function showBalanceResponse(responseText) {
+  const amount = extractBalance(responseText);
+  balanceState = { amount, raw: responseText, updatedAt: Date.now(), simLabel: getSelectedSimLabel() };
+  saveToStorage(STORAGE_KEYS.balance, balanceState);
+  renderBalanceCard();
+  if (amount !== null) alert(`الرصيد الحالي: ${amount} ₪`);
+  else alert(`تم استلام رد الشبكة، لكن تعذر تحديد قيمة الرصيد تلقائياً.\n\n${responseText}`);
+}
+
+function getSelectedSimLabel() {
+  const select = document.getElementById('ussd-sim-select');
+  if (!select || !select.value) return '';
+  const option = select.options[select.selectedIndex];
+  return option ? option.textContent : '';
+}
+
+async function refreshSimSelector() {
+  const select = document.getElementById('ussd-sim-select');
+  const hint = document.getElementById('ussd-sim-hint');
+  if (!select) return;
+  if (!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() && Capacitor.Plugins && Capacitor.Plugins.UssdDialer)) {
+    select.style.display = 'none';
+    if (hint) hint.textContent = 'يظهر اختيار الشريحة داخل تطبيق Android فقط.';
+    return;
+  }
+  try {
+    const result = await Capacitor.Plugins.UssdDialer.listSims();
+    if (!result || result.permissionGranted === false || !Array.isArray(result.sims)) return;
+    select.innerHTML = '<option value="">الشريحة الافتراضية</option>' + result.sims.map(sim => {
+      const label = sim.displayName || sim.carrierName || `SIM ${Number(sim.simSlotIndex) + 1}`;
+      const carrier = sim.carrierName && sim.displayName !== sim.carrierName ? ` — ${escapeHtml(sim.carrierName)}` : '';
+      return `<option value="${String(sim.subscriptionId)}">${escapeHtml(label)}${carrier}</option>`;
+    }).join('');
+    const saved = getSelectedSimId();
+    if (saved !== null && [...select.options].some(o => Number(o.value) === saved)) select.value = String(saved);
+    else { selectedSimId = null; saveToStorage(STORAGE_KEYS.sim, null); }
+    select.style.display = result.sims.length > 1 ? '' : 'none';
+    if (hint) hint.textContent = result.sims.length > 1 ? 'اختر الشريحة التي سيتم تنفيذ USSD من خلالها.' : '';
+  } catch (e) { console.warn('SwiftPay: unable to list SIMs', e); }
+}
+
+function onSimChanged(value) {
+  selectedSimId = value === '' ? null : Number(value);
+  saveToStorage(STORAGE_KEYS.sim, selectedSimId);
+  balanceState.simLabel = getSelectedSimLabel();
+  saveToStorage(STORAGE_KEYS.balance, balanceState);
+  renderBalanceCard();
+}
+
+async function checkJawwalBalance() {
+  const button = document.getElementById('check-balance-btn');
+  if (button) { button.disabled = true; button.textContent = 'جارٍ فحص الرصيد…'; }
+  try {
+    if (window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() && Capacitor.Plugins && Capacitor.Plugins.UssdDialer) {
+      try {
+        const args = { code: JAWWAL_BALANCE_CODE };
+        const simId = getSelectedSimId();
+        if (simId !== null) args.subscriptionId = simId;
+        const result = await Capacitor.Plugins.UssdDialer.dial(args);
+        if (result && result.supported && result.permissionGranted && typeof result.response === 'string') { showBalanceResponse(result.response); return; }
+        if (result && result.supported && result.permissionGranted === false) { alert('يجب السماح بإذن الاتصال حتى يفحص التطبيق الرصيد تلقائياً.'); return; }
+      } catch (e) { console.warn('SwiftPay: balance native request failed', e); }
+    }
+    const link = document.createElement('a');
+    link.href = 'tel:' + JAWWAL_BALANCE_CODE.replace(/#/g, '%23');
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'تحديث الرصيد'; }
+  }
 }
 
 function resetToHome() {

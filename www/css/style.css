@@ -777,3 +777,9 @@ a { text-decoration: none; color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
+
+
+/* ===== SwiftPay: USSD balance card ===== */
+.balance-card{margin:12px 0 20px;padding:16px;border:1px solid var(--border-card);border-radius:18px;background:var(--bg-card);box-shadow:var(--shadow-card)}
+.balance-card-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.balance-label{color:var(--text-secondary);font-size:.78rem}.balance-amount{margin-top:3px;font-size:1.75rem;font-weight:800}.balance-updated{margin-top:3px;color:var(--text-muted);font-size:.7rem}.balance-controls{display:flex;gap:8px;margin-top:14px}.sim-select{flex:1;min-width:0;border:1px solid var(--border-card);border-radius:12px;padding:10px 11px;background:var(--bg-input);color:var(--text-primary);font:inherit}.balance-refresh-btn{border:0;border-radius:12px;padding:10px 14px;background:var(--primary);color:#fff;font:inherit;font-weight:700;cursor:pointer;white-space:nowrap}.balance-refresh-btn:disabled{opacity:.6;cursor:wait}.balance-hint{margin-top:9px;color:var(--text-muted);font-size:.68rem;line-height:1.5}.balance-details{margin-top:10px;color:var(--text-secondary);font-size:.72rem}.balance-details summary{cursor:pointer}.balance-raw{margin-top:7px;padding:9px;border-radius:10px;background:var(--bg-input);white-space:pre-wrap;word-break:break-word;color:var(--text-primary)}
+@media(max-width:420px){.balance-controls{flex-direction:column}.balance-refresh-btn{width:100%}}

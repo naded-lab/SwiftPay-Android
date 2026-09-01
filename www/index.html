@@ -127,6 +127,28 @@
         <svg class="icon" style="color:var(--text-muted);"><use href="#i-arrow-right"></use></svg>
       </div>
 
+      <div class="balance-card">
+        <div class="balance-card-top">
+          <div>
+            <div class="balance-label">رصيد جوال بي</div>
+            <div class="balance-amount" id="jawwal-balance-amount">—</div>
+            <div class="balance-updated" id="jawwal-balance-updated">لم يتم فحص الرصيد بعد</div>
+          </div>
+          <div class="service-icon">₪</div>
+        </div>
+        <div class="balance-controls">
+          <select id="ussd-sim-select" class="sim-select" onchange="onSimChanged(this.value)" aria-label="اختيار الشريحة">
+            <option value="">الشريحة الافتراضية</option>
+          </select>
+          <button id="check-balance-btn" class="balance-refresh-btn" onclick="checkJawwalBalance()">تحديث الرصيد</button>
+        </div>
+        <div class="balance-hint" id="ussd-sim-hint">يتم استخراج الرصيد تلقائياً من رد USSD داخل تطبيق Android.</div>
+        <details class="balance-details">
+          <summary>عرض رد الشبكة</summary>
+          <div id="jawwal-balance-raw" class="balance-raw"></div>
+        </details>
+      </div>
+
       <div class="service-card palpay" onclick="startWizard('palpay')">
         <div class="service-info">
           <div class="service-icon">P</div>
