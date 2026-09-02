@@ -611,6 +611,11 @@ a { text-decoration: none; color: inherit; }
 .switch input:checked + .slider::before { transform: translateX(-18px); }
 
 /* ---------------------- 16) شريط التنقل السفلي ---------------------- */
+/* إخفاء شريط التنقل عند ظهور لوحة المفاتيح */
+.bottom-nav.keyboard-open {
+  display: none !important;
+}
+
 .bottom-nav {
   position: fixed;
   bottom: 0;

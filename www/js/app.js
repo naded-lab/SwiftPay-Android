@@ -117,6 +117,21 @@ window.addEventListener('load', () => {
     initApp();
   }
 
+  // إصلاح تداخل شريط التنقل السفلي مع لوحة المفاتيح في Android WebView
+  const bottomNav = document.querySelector('.bottom-nav');
+  const viewport = window.visualViewport;
+
+  if (bottomNav && viewport) {
+    const updateKeyboardState = () => {
+      const keyboardOpen = (window.innerHeight - viewport.height) > 150;
+      bottomNav.classList.toggle('keyboard-open', keyboardOpen);
+    };
+
+    viewport.addEventListener('resize', updateKeyboardState);
+    viewport.addEventListener('scroll', updateKeyboardState);
+    updateKeyboardState();
+  }
+
   // تسجيل service worker لضمان العمل دون إنترنت بعد أول فتح
   // ملاحظة: الملف بجذر المشروع (وليس داخل /pwa/) كي يشمل نطاق تحكمه (scope)
   // كامل التطبيق تلقائياً دون الاعتماد على أي هيدر خاص من الاستضافة
