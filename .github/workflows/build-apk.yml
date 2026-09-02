@@ -1,4 +1,4 @@
-name: Build SwiftPay APK
+name: Build SwiftPay Release APK
 
 on:
   workflow_dispatch:
@@ -50,7 +50,9 @@ jobs:
       - name: Decode release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.SWIFTPAY_KEYSTORE_BASE64 }}
-        run: echo "$KEYSTORE_BASE64" | base64 --decode > android/swiftpay-release.jks
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/swiftpay-release.jks
+          test -s android/swiftpay-release.jks
 
       - name: Create keystore.properties
         env:
@@ -58,19 +60,26 @@ jobs:
           KEY_ALIAS: ${{ secrets.SWIFTPAY_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.SWIFTPAY_KEY_PASSWORD }}
         run: |
-          printf 'storeFile=swiftpay-release.jks
-storePassword=%s
-keyAlias=%s
-keyPassword=%s
-' "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/keystore.properties
+          printf 'storeFile=swiftpay-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/keystore.properties
 
       - name: Build Release APK
         working-directory: android
         run: ./gradlew assembleRelease --no-daemon
 
-      - name: Upload APK
+      - name: Verify APK
+        run: |
+          test -f android/app/build/outputs/apk/release/app-release.apk
+          echo "Release APK created successfully"
+
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: SwiftPay-Stage3-release
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+
+      - name: Cleanup signing files
+        if: always()
+        run: |
+          rm -f android/swiftpay-release.jks
+          rm -f android/keystore.properties
