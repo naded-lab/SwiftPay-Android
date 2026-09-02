@@ -51,8 +51,8 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.SWIFTPAY_KEYSTORE_BASE64 }}
         run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/swiftpay-release.jks
-          test -s android/swiftpay-release.jks
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/swiftpay-release.jks
+          test -s android/app/swiftpay-release.jks
 
       - name: Create keystore.properties
         env:
@@ -81,5 +81,5 @@ jobs:
       - name: Cleanup signing files
         if: always()
         run: |
-          rm -f android/swiftpay-release.jks
+          rm -f android/app/swiftpay-release.jks
           rm -f android/keystore.properties
