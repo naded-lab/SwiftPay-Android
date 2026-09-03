@@ -614,18 +614,21 @@ a { text-decoration: none; color: inherit; }
 /* إخفاء شريط التنقل عند ظهور لوحة المفاتيح */
 .bottom-nav.keyboard-open {
   display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 .bottom-nav {
   position: fixed;
-  bottom: 0;
   left: 50%;
+  bottom: 0;
   transform: translateX(-50%);
   width: 100%;
   max-width: 480px;
   display: flex;
   justify-content: space-around;
   padding: 10px 8px calc(10px + var(--safe-bottom));
+  box-sizing: border-box;
   background: color-mix(in srgb, var(--bg-main) 90%, transparent);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);

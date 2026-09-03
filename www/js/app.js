@@ -117,20 +117,42 @@ window.addEventListener('load', () => {
     initApp();
   }
 
-  // إصلاح تداخل شريط التنقل السفلي مع لوحة المفاتيح في Android WebView
-  const bottomNav = document.querySelector('.bottom-nav');
-  const viewport = window.visualViewport;
+  // إصلاح الكيبورد وشريط التنقل السفلي في Android WebView
+  (() => {
+    const bottomNav = document.querySelector('.bottom-nav');
+    if (!bottomNav) return;
 
-  if (bottomNav && viewport) {
+    let keyboardOpen = false;
+
     const updateKeyboardState = () => {
-      const keyboardOpen = (window.innerHeight - viewport.height) > 150;
+      const viewport = window.visualViewport;
+      if (!viewport) return;
+
+      const heightDifference = window.innerHeight - viewport.height;
+
+      const isOpen =
+        heightDifference > 120 ||
+        viewport.height < window.innerHeight * 0.75;
+
+      if (isOpen === keyboardOpen) return;
+
+      keyboardOpen = isOpen;
       bottomNav.classList.toggle('keyboard-open', keyboardOpen);
     };
 
-    viewport.addEventListener('resize', updateKeyboardState);
-    viewport.addEventListener('scroll', updateKeyboardState);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', updateKeyboardState);
+      window.visualViewport.addEventListener('scroll', updateKeyboardState);
+    }
+
+    window.addEventListener('resize', updateKeyboardState);
+
+    window.addEventListener('orientationchange', () => {
+      setTimeout(updateKeyboardState, 100);
+    });
+
     updateKeyboardState();
-  }
+  })();
 
   // تسجيل service worker لضمان العمل دون إنترنت بعد أول فتح
   // ملاحظة: الملف بجذر المشروع (وليس داخل /pwa/) كي يشمل نطاق تحكمه (scope)
