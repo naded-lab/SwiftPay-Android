@@ -711,7 +711,6 @@ function showBalanceResponse(responseText) {
   balanceState = { amount, raw: responseText, updatedAt: Date.now(), simLabel: getSelectedSimLabel() };
   saveToStorage(STORAGE_KEYS.balance, balanceState);
   renderBalanceCard();
-  else alert(`تم استلام رد الشبكة، لكن تعذر تحديد قيمة الرصيد تلقائياً.\n\n${responseText}`);
 }
 
 function getSelectedSimLabel() {
