@@ -55,7 +55,7 @@ function migrateTransactions(list) {
 
 let transactionsList = migrateTransactions(loadFromStorage(STORAGE_KEYS.tx, []));
 let favoritesList = loadFromStorage(STORAGE_KEYS.fav, []);
-let appSettings = loadFromStorage(STORAGE_KEYS.settings, { notifications: true, darkMode: true });
+let appSettings = loadFromStorage(STORAGE_KEYS.settings, { notifications: true, darkMode: false });
 let savedPins = loadFromStorage(STORAGE_KEYS.pins, { jawwal: '', palpay: '' });
 let appLockState = loadFromStorage(STORAGE_KEYS.applock, { enabled: false, hash: '', salt: '' });
 let balanceState = loadFromStorage(STORAGE_KEYS.balance, { amount: null, raw: '', updatedAt: null, simLabel: '' });
@@ -711,7 +711,6 @@ function showBalanceResponse(responseText) {
   balanceState = { amount, raw: responseText, updatedAt: Date.now(), simLabel: getSelectedSimLabel() };
   saveToStorage(STORAGE_KEYS.balance, balanceState);
   renderBalanceCard();
-  if (amount !== null) alert(`الرصيد الحالي: ${amount} ₪`);
   else alert(`تم استلام رد الشبكة، لكن تعذر تحديد قيمة الرصيد تلقائياً.\n\n${responseText}`);
 }
 

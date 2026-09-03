@@ -135,7 +135,7 @@ a { text-decoration: none; color: inherit; }
   max-width: 480px;
   margin: 0 auto;
   min-height: 100vh;
-  min-height: 100dvh;
+  min-height: 100%;
   background: var(--bg-main);
   display: flex;
   flex-direction: column;
