@@ -169,6 +169,7 @@ window.addEventListener('load', () => {
 });
 
 function applySettingsUI() {
+  document.body.classList.toggle("light-theme", appSettings.darkMode === false);
   const notifToggle = document.getElementById('notif-toggle');
   const darkToggle = document.getElementById('dark-toggle');
   if (notifToggle) notifToggle.checked = appSettings.notifications;
