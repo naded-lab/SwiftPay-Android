@@ -120,9 +120,42 @@ window.addEventListener('load', () => {
   // إصلاح الكيبورد وشريط التنقل السفلي في Android WebView
   (() => {
     const bottomNav = document.querySelector('.bottom-nav');
+    const mobileApp = document.querySelector('.mobile-app');
     if (!bottomNav) return;
 
     let keyboardOpen = false;
+    let restoreTimer = null;
+
+    const isKeyboardInput = (el) => {
+      if (!el) return false;
+      if (el.tagName === 'TEXTAREA') return true;
+      if (el.tagName !== 'INPUT') return false;
+
+      const type = (el.type || 'text').toLowerCase();
+
+      return ![
+        'button',
+        'checkbox',
+        'color',
+        'file',
+        'hidden',
+        'image',
+        'radio',
+        'range',
+        'reset',
+        'submit'
+      ].includes(type);
+    };
+
+    const setKeyboardOpen = (open) => {
+      keyboardOpen = open;
+      bottomNav.classList.toggle('keyboard-open', open);
+      document.body.classList.toggle('keyboard-open', open);
+
+      if (mobileApp) {
+        mobileApp.classList.toggle('keyboard-open', open);
+      }
+    };
 
     const updateKeyboardState = () => {
       const viewport = window.visualViewport;
@@ -134,11 +167,35 @@ window.addEventListener('load', () => {
         heightDifference > 120 ||
         viewport.height < window.innerHeight * 0.75;
 
-      if (isOpen === keyboardOpen) return;
-
-      keyboardOpen = isOpen;
-      bottomNav.classList.toggle('keyboard-open', keyboardOpen);
+      setKeyboardOpen(isOpen);
     };
+
+    document.addEventListener('focusin', (event) => {
+      if (!isKeyboardInput(event.target)) return;
+
+      clearTimeout(restoreTimer);
+      setKeyboardOpen(true);
+
+      setTimeout(() => {
+        if (document.activeElement === event.target) {
+          event.target.scrollIntoView({
+            behavior: 'auto',
+            block: 'center',
+            inline: 'nearest'
+          });
+        }
+      }, 150);
+    });
+
+    document.addEventListener('focusout', () => {
+      clearTimeout(restoreTimer);
+
+      restoreTimer = setTimeout(() => {
+        if (!isKeyboardInput(document.activeElement)) {
+          updateKeyboardState();
+        }
+      }, 250);
+    });
 
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', updateKeyboardState);
@@ -148,7 +205,7 @@ window.addEventListener('load', () => {
     window.addEventListener('resize', updateKeyboardState);
 
     window.addEventListener('orientationchange', () => {
-      setTimeout(updateKeyboardState, 100);
+      setTimeout(updateKeyboardState, 150);
     });
 
     updateKeyboardState();

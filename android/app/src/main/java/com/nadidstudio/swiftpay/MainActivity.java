@@ -1,7 +1,7 @@
 package com.nadidstudio.swiftpay;
 
-import android.os.Build;
 import android.os.Bundle;
+import android.view.WindowManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import androidx.webkit.WebSettingsCompat;
@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(UssdPlugin.class);
         super.onCreate(savedInstanceState);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
 
         WebView webView = this.bridge.getWebView();
         WebSettings settings = webView.getSettings();
