@@ -22,3 +22,21 @@ input, textarea {
   font-size: 16px !important; /* منع التقريب التلقائي في أندرويد */
 }
 
+
+/* Fix Keyboard White Area and Screen Shrink */
+html, body {
+  height: 100% !important;
+  min-height: 100% !important;
+  position: relative !important;
+  overflow-y: auto !important;
+}
+
+main, .content, .container, #app {
+  min-height: 100vh !important;
+  height: auto !important;
+  padding-bottom: 120px !important;
+}
+
+input, select, textarea {
+  font-size: 16px !important;
+}
