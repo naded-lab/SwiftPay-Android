@@ -1,0 +1,5 @@
+plugins { id 'com.android.application' }
+
+android { namespace 'com.nadidstudio.swiftpay'; compileSdk 35
+    defaultConfig { applicationId 'com.nadidstudio.swiftpay'; minSdk 26; targetSdk 35; versionCode 30; versionName '3.0' }
+}

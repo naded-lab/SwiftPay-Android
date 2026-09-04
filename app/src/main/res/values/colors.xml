@@ -1,0 +1,6 @@
+<resources>
+    <color name="bg">#050D1A</color><color name="card">#0D1E38</color><color name="card2">#122347</color>
+    <color name="blue">#2563EB</color><color name="cyan">#06B6D4</color><color name="green">#10B981</color>
+    <color name="purple">#7C3AED</color><color name="text">#E2EAF6</color><color name="text2">#8FA8CC</color>
+    <color name="border">#1A3060</color><color name="danger">#EF4444</color>
+</resources>
