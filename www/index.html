@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#080D1A">
 <meta name="description" content="SwiftPay — إنشاء أكواد USSD لتحويلات جوال بي وبال بي بسرعة وأمان، ويعمل بالكامل دون إنترنت.">
 <meta name="mobile-web-app-capable" content="yes">
@@ -19,6 +19,8 @@
 
 <!-- theme.js يُحمَّل مبكراً وبشكل متزامن لمنع أي وميض للون الخاطئ عند فتح التطبيق -->
 <script src="js/theme.js"></script>
+<!-- boot-guard: حماية من الشاشة البيضاء، يجب أن يبقى قبل app.js -->
+<script src="js/boot-guard.js"></script>
 </head>
 <body>
 
@@ -45,6 +47,9 @@
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
   <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M10.6 10.6a3 3 0 0 0 4.2 4.2"/><path d="M9.9 5.1A10.9 10.9 0 0 1 12 5c6 0 10 7 10 7a17.7 17.7 0 0 1-3.2 4.1M6.2 6.2C3.6 7.9 2 12 2 12s4 7 10 7a10.4 10.4 0 0 0 4.2-.9"/></symbol>
 </svg>
 
 <!-- ===================== شاشة قفل التطبيق (تظهر فوق كل شيء عند تفعيلها) ===================== -->
@@ -56,15 +61,15 @@
     <span></span><span></span><span></span><span></span>
   </div>
   <div class="applock-keypad">
-    <button class="applock-key" onclick="applockPressDigit('1')">1</button>
-    <button class="applock-key" onclick="applockPressDigit('2')">2</button>
     <button class="applock-key" onclick="applockPressDigit('3')">3</button>
-    <button class="applock-key" onclick="applockPressDigit('4')">4</button>
-    <button class="applock-key" onclick="applockPressDigit('5')">5</button>
+    <button class="applock-key" onclick="applockPressDigit('2')">2</button>
+    <button class="applock-key" onclick="applockPressDigit('1')">1</button>
     <button class="applock-key" onclick="applockPressDigit('6')">6</button>
-    <button class="applock-key" onclick="applockPressDigit('7')">7</button>
-    <button class="applock-key" onclick="applockPressDigit('8')">8</button>
+    <button class="applock-key" onclick="applockPressDigit('5')">5</button>
+    <button class="applock-key" onclick="applockPressDigit('4')">4</button>
     <button class="applock-key" onclick="applockPressDigit('9')">9</button>
+    <button class="applock-key" onclick="applockPressDigit('8')">8</button>
+    <button class="applock-key" onclick="applockPressDigit('7')">7</button>
     <button class="applock-key applock-empty"></button>
     <button class="applock-key" onclick="applockPressDigit('0')">0</button>
     <button class="applock-key applock-delete" onclick="applockBackspace()">⌫</button>
@@ -91,28 +96,30 @@
     <!-- ============ شاشة 1: الرئيسية ============ -->
     <section class="view active-view" id="home-view">
 
-      <div class="greeting-section">
-        <div class="greeting-title">أهلاً بك 👋</div>
-        <div class="greeting-subtitle">أنشئ كود تحويل خلال ثوانٍ</div>
-      </div>
+  
 
-      <!-- بطاقة الدعوة للتثبيت -->
-      <div class="install-banner" id="install-banner">
-        <div class="install-banner-icon"><svg class="icon"><use href="#i-download"></use></svg></div>
-        <div class="install-banner-text">
-          <h4>ثبّت SwiftPay على جهازك</h4>
-          <p>وصول أسرع، ويعمل حتى بدون إنترنت</p>
+      <!-- بطاقة رصيد جوال بي -->
+      <div class="balance-card" id="jawwal-balance-card">
+        <div class="balance-card-top">
+          <span class="balance-card-label">
+            <span class="balance-service-dot"></span>
+            رصيد جوال بي المتاح
+          </span>
+          <div class="balance-card-actions">
+            <button class="balance-icon-btn" id="balance-refresh-btn" onclick="refreshJawwalBalance()" aria-label="تحديث الرصيد">
+              <svg class="icon"><use href="#i-refresh"></use></svg>
+            </button>
+            <button class="balance-icon-btn" onclick="toggleBalanceVisibility()" aria-label="إخفاء أو إظهار الرصيد">
+              <svg class="icon" id="balance-eye-icon"><use href="#i-eye"></use></svg>
+            </button>
+          </div>
         </div>
-        <button class="install-banner-btn" onclick="swiftpayTriggerInstall()">تثبيت</button>
-        <button class="install-banner-close" onclick="swiftpayDismissInstallBanner()">
-          <svg class="icon"><use href="#i-x"></use></svg>
-        </button>
-      </div>
-
-      <div class="hero-banner">
-        <h2>تحويل فوري وآمن</h2>
-        <p>اختر الخدمة، أدخل البيانات، واحصل على كود USSD جاهز للاتصال مباشرة</p>
-      </div>
+        <div class="balance-card-amount">
+          <span id="balance-amount-value">--</span>
+          <span class="balance-currency">₪</span>
+        </div>
+        <div class="balance-card-meta" id="balance-card-meta"> لم يتم التحديث بعد </div>
+      </div>            
 
       <div class="section-title">الخدمات</div>
 
@@ -139,7 +146,7 @@
       </div>
 
       <div class="section-title">
-        آخر العمليات
+        آخر التحويلات
         <span class="link" onclick="switchTab('history')">عرض الكل</span>
       </div>
       <div id="home-recent-list"></div>
@@ -237,12 +244,12 @@
               <svg class="icon"><use href="#i-copy"></use></svg> نسخ
             </button>
             <button class="action-btn call-btn" onclick="callCode()">
-              <svg class="icon"><use href="#i-phone-call"></use></svg> اتصال
+              <svg class="icon"><use href="#i-phone-call"></use></svg> تحويل
             </button>
           </div>
 
           <button class="create-new-btn" style="background:var(--bg-card);color:var(--text-primary);border:1.5px solid var(--border-card);box-shadow:none;" onclick="startNewCode()">
-            إنشاء كود جديد
+            إنشاء تحويل جديد
           </button>
         </div>
       </div>
@@ -252,7 +259,7 @@
     <!-- ============ شاشة 3: سجل الحركات ============ -->
     <section class="view" id="history-view">
       <div class="section-title" style="margin-top:0;">
-        كل العمليات
+        كل الحركات
         <span class="link" onclick="clearHistory()">مسح السجل</span>
       </div>
       <div id="full-history-list"></div>
@@ -279,24 +286,11 @@
             <h3>SwiftPay <span class="ver-badge">v3.0</span></h3>
             <p>مولّد أكواد تحويل ذكي يعمل بالكامل على جهازك دون الحاجة لإنترنت، وبياناتك لا تغادر هاتفك أبداً.</p>
           </div>
-        </div>
+         </div>
       </div>
-
-      <!-- زر التثبيت (يظهر فقط إن لم يكن التطبيق مثبتاً بعد) -->
-      <div class="settings-group-box" style="margin-bottom:14px;">
-        <div class="settings-item-row install-row" id="install-settings-row" onclick="swiftpayTriggerInstall()" style="display:none;">
-          <div class="settings-item-left">
-            <div class="settings-item-icon"><svg class="icon"><use href="#i-download"></use></svg></div>
-            <div class="settings-item-text">
-              <h4>تثبيت SwiftPay</h4>
-              <p>أضِفه كتطبيق مستقل على شاشتك الرئيسية</p>
-            </div>
-          </div>
-          <svg class="icon" style="color:var(--text-muted);"><use href="#i-arrow-right"></use></svg>
-        </div>
-      </div>
-
-      <div class="settings-section-title">المظهر والإشعارات</div>
+      
+      
+       <div class="settings-section-title">المظهر والإشعارات</div>
       <div class="settings-group-box">
         <div class="settings-item-row">
           <div class="settings-item-left">
@@ -346,7 +340,7 @@
             <div class="settings-item-icon icon-red"><svg class="icon"><use href="#i-key"></use></svg></div>
             <div class="settings-item-text">
               <h4>تغيير رمز القفل</h4>
-              <p>تحديث الرمز السري لفتح التطبيق</p>
+              <p>تحديث الرمز السري </p>
             </div>
           </div>
           <svg class="icon" style="color:var(--text-muted);"><use href="#i-arrow-right"></use></svg>

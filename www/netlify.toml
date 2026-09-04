@@ -8,3 +8,9 @@
   [headers.values]
     Cache-Control = "no-cache"
     Service-Worker-Allowed = "/"
+
+# مسار احتياطي (fallback) لأي رابط غير معروف: نُعيد index.html بدل صفحة بيضاء/404 فارغة
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

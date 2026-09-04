@@ -12,6 +12,10 @@ npx cap add android
 echo "==> مزامنة www/ مع مشروع أندرويد..."
 npx cap sync android
 
+echo "==> تفعيل SwiftPay native USSD plugin..."
+./native-stage2/install-stage2.sh
+npx cap sync android
+
 echo ""
-echo "تم. لبناء APK افتح مجلد android/ في Android Studio، أو نفّذ:"
+echo "تم إعداد SwiftPay Stage 2. لبناء APK افتح مجلد android/ في Android Studio، أو نفّذ:"
 echo "  cd android && ./gradlew assembleDebug"

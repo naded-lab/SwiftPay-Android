@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="swift_bg">#080D14</color>
+    <color name="swift_surface">#111722</color>
+    <color name="swift_surface_2">#171D29</color>
+    <color name="swift_border">#273142</color>
+    <color name="swift_text">#F5F7FA</color>
+    <color name="swift_secondary">#A7B0C0</color>
+    <color name="swift_muted">#687386</color>
+    <color name="swift_green">#00E676</color>
+    <color name="swift_green_dark">#06210F</color>
+    <color name="swift_purple">#7C4DFF</color>
+    <color name="swift_red">#FF5C70</color>
+    <color name="swift_orange">#FFB020</color>
+</resources>
