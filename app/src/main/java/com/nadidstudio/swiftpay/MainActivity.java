@@ -6,6 +6,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -20,9 +21,9 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.Space;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -31,6 +32,9 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+
+import android.content.res.ColorStateList;
+import android.graphics.drawable.RippleDrawable;
 
 import android.app.Activity;
 import android.content.SharedPreferences;
@@ -51,13 +55,16 @@ public class MainActivity extends Activity {
     private String type = "friend";    // "friend" أو "merchant" (لجوال بي فقط)
     private int selectedSim = -1;
 
-    // لوحة الألوان
-    private final int COLOR_BG = Color.rgb(5, 13, 26);
-    private final int COLOR_CARD = Color.rgb(13, 30, 56);
-    private final int COLOR_TEXT = Color.rgb(226, 234, 246);
-    private final int COLOR_TEXT2 = Color.rgb(143, 168, 204);
-    private final int COLOR_BLUE = Color.rgb(37, 99, 235);
-    private final int COLOR_GREEN = Color.rgb(16, 185, 129);
+    // لوحة الألوان — مطابقة لـ design tokens بالنسخة القديمة (:root بملف style.css)
+    private final int COLOR_BG = Color.parseColor("#080D1A");
+    private final int COLOR_CARD = Color.parseColor("#111827");
+    private final int COLOR_TEXT = Color.parseColor("#F1F5F9");
+    private final int COLOR_TEXT2 = Color.parseColor("#94A3B8");
+    private final int COLOR_TEXT_MUTED = Color.parseColor("#64748B");
+    private final int COLOR_PRIMARY = Color.parseColor("#00E676");
+    private final int COLOR_ON_PRIMARY = Color.parseColor("#06210F");
+    private final int COLOR_SECONDARY = Color.parseColor("#6366F1");
+    private final int COLOR_DANGER = Color.parseColor("#FB7185");
 
     // ===================== دورة حياة النشاط =====================
 
@@ -85,29 +92,84 @@ public class MainActivity extends Activity {
         bottom = findViewById(R.id.bottomNav);
         title = findViewById(R.id.title);
 
-        findViewById(R.id.navHome).setOnClickListener(v -> showHome());
-        findViewById(R.id.navHistory).setOnClickListener(v -> showHistory());
-        findViewById(R.id.navFav).setOnClickListener(v -> showFavorites());
-        findViewById(R.id.navSettings).setOnClickListener(v -> showSettings());
+        setNavClick(R.id.navHome, 0, this::showHome);
+        setNavClick(R.id.navHistory, 1, this::showHistory);
+        setNavClick(R.id.navFav, 2, this::showFavorites);
+        setNavClick(R.id.navSettings, 3, this::showSettings);
         findViewById(R.id.settingsTop).setOnClickListener(v -> showSettings());
     }
 
+    private void setNavClick(int viewId, int index, Runnable action) {
+        findViewById(viewId).setOnClickListener(v -> {
+            updateActiveNav(index);
+            action.run();
+        });
+    }
+
+    /** يلوّن عنصر التنقل النشط بالأخضر ويطفئ الباقي، بنفس منطق .nav-item.active بالتصميم القديم */
+    private void updateActiveNav(int activeIndex) {
+        int[] ids = {R.id.navHome, R.id.navHistory, R.id.navFav, R.id.navSettings};
+        for (int i = 0; i < ids.length; i++) {
+            ((Button) findViewById(ids[i])).setTextColor(i == activeIndex ? COLOR_PRIMARY : COLOR_TEXT_MUTED);
+        }
+    }
+
     // ===================== أدوات بناء عناصر الواجهة =====================
+
+    /** يغلّف أي drawable بتأثير تموّج (ripple) عند اللمس، بديل :active بالـ CSS القديم */
+    private Drawable rippleWrap(int backgroundDrawableRes, int rippleTintColor) {
+        Drawable content = getDrawable(backgroundDrawableRes);
+        int rippleColor = Color.argb(60, Color.red(rippleTintColor), Color.green(rippleTintColor), Color.blue(rippleTintColor));
+        return new RippleDrawable(ColorStateList.valueOf(rippleColor), content, content);
+    }
 
     private TextView tv(String text, float sizeSp) {
         TextView t = new TextView(this);
         t.setText(text);
         t.setTextColor(COLOR_TEXT);
         t.setTextSize(sizeSp);
-        t.setPadding(18, 14, 18, 14);
+        t.setPadding(4, 10, 4, 10);
         return t;
     }
 
+    private TextView tvSecondary(String text, float sizeSp) {
+        TextView t = tv(text, sizeSp);
+        t.setTextColor(COLOR_TEXT2);
+        return t;
+    }
+
+    /** زر بمظهر كارت (بديل .service-card / .select-card / .settings-item-row) */
     private Button btn(String text) {
         Button b = new Button(this);
         b.setText(text);
         b.setTextColor(COLOR_TEXT);
-        b.setBackgroundColor(COLOR_CARD);
+        b.setTextSize(15);
+        b.setAllCaps(false);
+        b.setBackground(rippleWrap(R.drawable.bg_card, COLOR_TEXT));
+        b.setElevation(4f);
+        b.setStateListAnimator(null);
+        b.setPadding(20, 18, 20, 18);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
+        p.setMargins(0, 0, 0, 12);
+        b.setLayoutParams(p);
+        return b;
+    }
+
+    /** زر أساسي بتدرج أخضر (بديل .create-new-btn / .call-btn) */
+    private Button btnPrimary(String text) {
+        Button b = new Button(this);
+        b.setText(text);
+        b.setTextColor(COLOR_ON_PRIMARY);
+        b.setTextSize(15);
+        b.setTypeface(b.getTypeface(), android.graphics.Typeface.BOLD);
+        b.setAllCaps(false);
+        b.setBackground(rippleWrap(R.drawable.bg_primary_button, Color.WHITE));
+        b.setElevation(8f);
+        b.setStateListAnimator(null);
+        b.setPadding(20, 20, 20, 20);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
+        p.setMargins(0, 6, 0, 12);
+        b.setLayoutParams(p);
         return b;
     }
 
@@ -115,22 +177,23 @@ public class MainActivity extends Activity {
         EditText e = new EditText(this);
         e.setHint(hint);
         e.setTextColor(COLOR_TEXT);
-        e.setHintTextColor(COLOR_TEXT2);
+        e.setHintTextColor(COLOR_TEXT_MUTED);
         e.setInputType(inputType);
-        e.setPadding(16, 12, 16, 12);
-        e.setBackgroundColor(COLOR_CARD);
+        e.setPadding(20, 16, 20, 16);
+        e.setBackgroundResource(R.drawable.bg_input);
+        e.setTextSize(15);
 
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, 58);
-        params.setMargins(0, 8, 0, 8);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+        params.setMargins(0, 0, 0, 14);
         e.setLayoutParams(params);
         return e;
     }
 
-    /** ينشئ صفحة قابلة للتمرير جديدة داخل content ويعيد الـ container الخاص بها */
+    /** ينشئ صفحة قابلة للتمرير جديدة داخل content ويعيد الـ container الخاص بها، مع انتقال ناعم (بديل fadeSlideUp بالتصميم القديم) */
     private LinearLayout page() {
         LinearLayout l = new LinearLayout(this);
         l.setOrientation(LinearLayout.VERTICAL);
-        l.setPadding(16, 8, 16, 20);
+        l.setPadding(18, 12, 18, 24);
 
         ScrollView sv = new ScrollView(this);
         sv.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
@@ -139,30 +202,71 @@ public class MainActivity extends Activity {
         content.removeAllViews();
         content.addView(sv);
         bottom.setVisibility(View.VISIBLE);
+
+        content.setAlpha(0f);
+        content.setTranslationY(16f);
+        content.animate().alpha(1f).translationY(0f).setDuration(220).start();
+
         return l;
     }
 
-    private void serviceCard(LinearLayout l, String name, String subtitle, String key, int color) {
-        Button b = btn(name + "\n" + subtitle);
-        b.setTextSize(18);
-        b.setOnClickListener(v -> startWizard(key));
-        l.addView(b, new LinearLayout.LayoutParams(-1, 92));
+    /** كارت خدمة بأيقونة ملوّنة + عنوان وشرح (بديل .service-card بالتصميم القديم) */
+    private void serviceCard(LinearLayout l, String name, String subtitle, String key, boolean primaryStyle) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        card.setBackground(rippleWrap(R.drawable.bg_card, primaryStyle ? COLOR_PRIMARY : COLOR_SECONDARY));
+        card.setElevation(6f);
+        card.setPadding(18, 16, 18, 16);
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
+        cardParams.setMargins(0, 0, 0, 12);
+        card.setLayoutParams(cardParams);
+        card.setOnClickListener(v -> startWizard(key));
 
-        Space spacer = new Space(this);
-        l.addView(spacer, new LinearLayout.LayoutParams(1, 10));
+        ImageView avatar = new ImageView(this);
+        avatar.setImageResource(primaryStyle ? R.drawable.ic_wallet : R.drawable.ic_transfer);
+        avatar.setBackgroundResource(primaryStyle ? R.drawable.bg_avatar_jawwal : R.drawable.bg_avatar_palpay);
+        avatar.setPadding(12, 12, 12, 12);
+        LinearLayout.LayoutParams avatarParams = new LinearLayout.LayoutParams(92, 92);
+        avatarParams.setMarginStart(14);
+        avatar.setLayoutParams(avatarParams);
+        card.addView(avatar);
+
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams textsParams = new LinearLayout.LayoutParams(0, -2, 1f);
+        texts.setLayoutParams(textsParams);
+
+        TextView titleView = new TextView(this);
+        titleView.setText(name);
+        titleView.setTextColor(COLOR_TEXT);
+        titleView.setTextSize(15);
+        titleView.setTypeface(titleView.getTypeface(), android.graphics.Typeface.BOLD);
+        texts.addView(titleView);
+
+        TextView subView = new TextView(this);
+        subView.setText(subtitle);
+        subView.setTextColor(COLOR_TEXT2);
+        subView.setTextSize(12);
+        subView.setPadding(0, 4, 0, 0);
+        texts.addView(subView);
+
+        card.addView(texts);
+        l.addView(card);
     }
 
     // ===================== الشاشات =====================
 
     private void showHome() {
+        updateActiveNav(0);
         title.setText("SwiftPay");
         LinearLayout l = page();
 
         l.addView(tv("الخدمات المالية", 24));
         l.addView(tv("اختر الخدمة لإنشاء عملية USSD", 14));
 
-        serviceCard(l, "جوال بي", "تحويل ورصيد", "jawwal", COLOR_BLUE);
-        serviceCard(l, "بال بي", "تحويل الأموال", "palpay", COLOR_GREEN);
+        serviceCard(l, "جوال بي", "تحويل ورصيد", "jawwal", true);
+        serviceCard(l, "بال بي", "تحويل الأموال", "palpay", false);
 
         l.addView(tv("آخر العمليات", 20));
         String history = sp.getString("history", "");
@@ -209,7 +313,7 @@ public class MainActivity extends Activity {
         l.addView(amount);
         l.addView(pin);
 
-        Button generate = btn("إنشاء كود USSD");
+        Button generate = btnPrimary("إنشاء كود USSD");
         generate.setOnClickListener(v -> generate(phone, amount, pin));
         l.addView(generate);
     }
@@ -247,8 +351,15 @@ public class MainActivity extends Activity {
         LinearLayout l = page();
         l.addView(tv("تم إنشاء الكود بنجاح", 22));
 
-        TextView codeView = tv(code, 22);
+        TextView codeView = tv(code, 24);
+        codeView.setTextColor(COLOR_PRIMARY);
+        codeView.setTypeface(codeView.getTypeface(), android.graphics.Typeface.BOLD);
         codeView.setTextIsSelectable(true);
+        codeView.setBackgroundResource(R.drawable.bg_card);
+        codeView.setGravity(android.view.Gravity.CENTER);
+        LinearLayout.LayoutParams codeParams = new LinearLayout.LayoutParams(-1, -2);
+        codeParams.setMargins(0, 12, 0, 18);
+        codeView.setLayoutParams(codeParams);
         l.addView(codeView);
 
         Button copy = btn("نسخ الكود");
@@ -259,7 +370,7 @@ public class MainActivity extends Activity {
         });
         l.addView(copy);
 
-        Button call = btn("تشغيل USSD");
+        Button call = btnPrimary("تشغيل USSD");
         call.setOnClickListener(v -> dialUssd(code));
         l.addView(call);
 
@@ -383,6 +494,7 @@ public class MainActivity extends Activity {
     // ===================== الإعدادات والقفل =====================
 
     private void showSettings() {
+        updateActiveNav(3);
         title.setText("الإعدادات");
         LinearLayout l = page();
         l.addView(tv("الإعدادات", 24));
@@ -452,7 +564,7 @@ public class MainActivity extends Activity {
         pinField.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
         l.addView(pinField);
 
-        Button unlockBtn = btn("فتح التطبيق");
+        Button unlockBtn = btnPrimary("فتح التطبيق");
         l.addView(unlockBtn);
         unlockBtn.setOnClickListener(v -> {
             if (hash(pinField.getText().toString()).equals(sp.getString("pinHash", ""))) {

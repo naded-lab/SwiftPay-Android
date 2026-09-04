@@ -1,6 +1,32 @@
 <resources>
-    <color name="bg">#050D1A</color><color name="ic_launcher_background">#050D1A</color><color name="card">#0D1E38</color><color name="card2">#122347</color>
-    <color name="blue">#2563EB</color><color name="cyan">#06B6D4</color><color name="green">#10B981</color>
-    <color name="purple">#7C3AED</color><color name="text">#E2EAF6</color><color name="text2">#8FA8CC</color>
-    <color name="border">#1A3060</color><color name="danger">#EF4444</color>
+    <!-- الخلفيات -->
+    <color name="bg">#080D1A</color>
+    <color name="card">#111827</color>
+    <color name="surface_raised">#161F32</color>
+    <color name="surface_elevated">#1B2438</color>
+
+    <!-- الحدود -->
+    <color name="border">#22293A</color>
+    <color name="border_strong">#2E3648</color>
+
+    <!-- النصوص -->
+    <color name="text">#F1F5F9</color>
+    <color name="text2">#94A3B8</color>
+    <color name="text_muted">#64748B</color>
+
+    <!-- ألوان الهوية -->
+    <color name="primary">#00E676</color>
+    <color name="primary_dark">#00B86B</color>
+    <color name="primary_bg">#1A2E24</color>
+    <color name="primary_border">#265A3E</color>
+    <color name="on_primary">#06210F</color>
+
+    <color name="secondary">#6366F1</color>
+    <color name="secondary_bg">#22243E</color>
+    <color name="secondary_border">#34375C</color>
+
+    <color name="danger">#FB7185</color>
+    <color name="danger_bg">#3A2229</color>
+    <color name="warning">#FBBF24</color>
+    <color name="ic_launcher_background">#080D1A</color>
 </resources>
