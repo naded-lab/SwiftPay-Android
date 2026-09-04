@@ -2,3 +2,5 @@
 
 .DS_Store
 swiftpay-release.jks
+keystore.properties
+app/*.jks

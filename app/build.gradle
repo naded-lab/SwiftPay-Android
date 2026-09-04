@@ -1,5 +1,37 @@
 plugins { id 'com.android.application' }
 
-android { namespace 'com.nadidstudio.swiftpay'; compileSdk 35
-    defaultConfig { applicationId 'com.nadidstudio.swiftpay'; minSdk 26; targetSdk 35; versionCode 30; versionName '3.0' }
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+android {
+    namespace 'com.nadidstudio.swiftpay'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.nadidstudio.swiftpay'
+        minSdk 26
+        targetSdk 35
+        versionCode 30
+        versionName '3.0'
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
+    }
 }
