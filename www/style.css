@@ -1,0 +1,24 @@
+
+/* منع اختفاء الواجهة عند فتح الكيبورد */
+html, body {
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+input, textarea {
+  font-size: 16px !important; /* منع التقريب التلقائي في أندرويد */
+}
+
+
+/* منع اختفاء الواجهة عند فتح الكيبورد */
+html, body {
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+input, textarea {
+  font-size: 16px !important; /* منع التقريب التلقائي في أندرويد */
+}
+
