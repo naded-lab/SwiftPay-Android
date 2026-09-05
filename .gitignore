@@ -10,5 +10,6 @@ android/*.iml
 android/app/*.iml
 android/app/release/
 android/app/debug/
-
 .DS_Store
+swiftpay-release.jks
+android/keystore.properties

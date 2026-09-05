@@ -9,7 +9,7 @@
  * الهدف: يعمل التطبيق بالكامل offline بعد أول فتح، ويُحدَّث تلقائياً بصمت عند توفر اتصال
  */
 
-const CACHE_VERSION = 'swiftpay-v4';
+const CACHE_VERSION = 'swiftpay-v5';
 const CACHE_NAME = `${CACHE_VERSION}-shell`;
 
 // كل الملفات الأساسية التي يحتاجها التطبيق ليعمل بالكامل دون إنترنت
@@ -19,6 +19,7 @@ const APP_SHELL = [
   './css/style.css',
   './js/app.js',
   './js/theme.js',
+  './js/boot-guard.js',
   './js/install.js',
   './pwa/manifest.json',
   './assets/icons/icon-192.png',

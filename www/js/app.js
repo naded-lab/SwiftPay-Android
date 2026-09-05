@@ -102,6 +102,7 @@ function initApp() {
   renderHistory();
   renderFavorites();
   applySettingsUI();
+  renderBalanceCard();
 }
 
 window.addEventListener('load', () => {
@@ -555,8 +556,27 @@ function legacyCopy(text) {
   }
 }
 
-function callCode() {
+async function callCode() {
   const code = document.getElementById('final-ussd-code').innerText;
+
+  // Stage 2: إذا التطبيق يشتغل native جوا Capacitor وplugin الـUSSD موجود،
+  // نجرب الاتصال المباشر (بدون فتح شاشة الداير) ونقرأ رد الشبكة الحقيقي.
+  // أي حالة غير مؤكدة (منصة ويب عادية، صلاحية مرفوضة، Android قديم، أو خطأ)
+  // بترجع بنفس أسلوب tel: الأصلي بالأسفل بدون أي تغيير.
+  if (window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() &&
+      Capacitor.Plugins && Capacitor.Plugins.UssdDialer) {
+    try {
+      const result = await Capacitor.Plugins.UssdDialer.dial({ code });
+      if (result && result.supported && result.permissionGranted && typeof result.response === 'string') {
+        handleNativeUssdResponse(code, result.response);
+        return;
+      }
+    } catch (e) {
+      // نكمل بالأسلوب الأصلي بالأسفل
+    }
+  }
+
+  // ===== الأسلوب الأصلي (PWA / fallback) — بدون أي تغيير =====
   // ملاحظة: لا يجب ترميز * عبر encodeURIComponent، وبعض متصفحات الأندرويد
   // لا تتعرف على كود USSD إذا كان مُرمّزاً بالكامل. لكن # يُقتطع من رابط
   // tel: باعتباره بداية "fragment"، لذلك نرمّزه فقط كـ %23 هنا.
@@ -580,6 +600,136 @@ function armPendingResultWatcher() {
     }
   };
   document.addEventListener('visibilitychange', handler);
+}
+
+// ===== Stage 2: تصنيف رد USSD الحقيقي القادم من sendUssdRequest =====
+// تنبيه مهم: الكلمات بالأسفل أمثلة توضيحية فقط وغير مؤكدة على ردود جوال بي/بال بي
+// الفعلية. لازم تجرب على جهاز حقيقي وترسللي نص الرد عند نجاح/فشل حقيقيين حتى
+// نضبطها. لحد هيك، أي رد ما بينطبق عليه شي بيرجع 'unknown' وبيفتح نفس نافذة
+// التأكيد اليدوية القديمة (سلوك آمن افتراضي، ما في تصنيف تلقائي خاطئ صامت).
+function classifyUssdResponse(text) {
+  const t = (text || '').trim();
+  if (/نجح|تمت العملية بنجاح/.test(t)) return 'success';
+  if (/فشل|غير كافٍ|غير كاف|رصيد غير/.test(t)) return 'failed';
+  return 'unknown';
+}
+
+function handleNativeUssdResponse(code, responseText) {
+  const tx = transactionsList.find(t => String(t.id) === String(lastPendingTxId));
+  if (!tx) return;
+
+  tx.nativeResponse = responseText;
+  const classification = classifyUssdResponse(responseText);
+
+  if (classification === 'unknown') {
+    saveToStorage(STORAGE_KEYS.tx, transactionsList);
+    openConfirmResult(lastPendingTxId);
+    return;
+  }
+
+  tx.status = classification;
+  tx.errorMessage = classification === 'failed' ? 'حسب رد الشبكة الفعلي بعد الاتصال' : null;
+  saveToStorage(STORAGE_KEYS.tx, transactionsList);
+  renderHistory();
+  lastPendingTxId = null;
+}
+
+// ===== Stage 3: بطاقة رصيد جوال بي =====
+//
+// ⚠️ نقطة مفتوحة مهمة: JAWWAL_BALANCE_USSD_CODE تحت لسا فاضي (null) لأنو ما
+// عندي الكود الفعلي يلي بيرجع رصيد جوال بي عبر USSD (مثال شائع بمشغّلين تانيين:
+// *110*3# أو *111# ...الخ، بس ما بدي أخمن كود خاص بـJawwal Pay بلا تأكيد).
+// جرّبه يدوياً من هاتفك (اتصال USSD عادي) وشوف الكود يلي بيورّيك الرصيد، واكتبه
+// هون بدل null. لحد هيك، زر التحديث بيوضّح رسالة واضحة بدل ما يحاول كود غلط.
+const JAWWAL_BALANCE_USSD_CODE = null; // TODO: عبّي الكود الصحيح هون، مثال: '*110*3#'
+
+const BALANCE_STORAGE_KEY = 'swiftpay_balance_jawwal';
+let balanceState = loadFromStorage(BALANCE_STORAGE_KEY, { amount: null, updatedAt: null, hidden: false });
+
+function renderBalanceCard() {
+  const valueEl = document.getElementById('balance-amount-value');
+  const metaEl = document.getElementById('balance-card-meta');
+  const eyeUse = document.getElementById('balance-eye-icon');
+  if (!valueEl || !metaEl || !eyeUse) return; // الكرت لسا ما انضاف بالـHTML
+
+  if (balanceState.amount === null) {
+    valueEl.innerText = '--';
+  } else {
+    valueEl.innerText = balanceState.hidden ? '••••' : balanceState.amount;
+  }
+
+  eyeUse.querySelector('use').setAttribute('href', balanceState.hidden ? '#i-eye-off' : '#i-eye');
+
+  if (!metaEl.classList.contains('error')) {
+    metaEl.innerText = balanceState.updatedAt
+      ? 'آخر تحديث: ' + formatArabicTime(new Date(balanceState.updatedAt))
+      : 'لم يتم التحديث بعد — دوس تحديث';
+  }
+}
+
+function toggleBalanceVisibility() {
+  balanceState.hidden = !balanceState.hidden;
+  saveToStorage(BALANCE_STORAGE_KEY, balanceState);
+  renderBalanceCard();
+}
+
+function isNativeUssdAvailable() {
+  return !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() &&
+    Capacitor.Plugins && Capacitor.Plugins.UssdDialer);
+}
+
+// نفس فلسفة classifyUssdResponse: ما بنخمن صيغة الرد، بس بنطلع أول رقم عشري
+// موجود بالنص (الصيغة الشائعة لردود USSD اللي بتذكر الرصيد بالنص)
+function extractBalanceFromResponse(text) {
+  const match = (text || '').match(/(\d+(?:[.,]\d+)?)/);
+  return match ? match[1].replace(',', '.') : null;
+}
+
+function setBalanceMeta(message, isError) {
+  const metaEl = document.getElementById('balance-card-meta');
+  if (!metaEl) return;
+  metaEl.innerText = message;
+  metaEl.classList.toggle('error', !!isError);
+}
+
+async function refreshJawwalBalance() {
+  const btn = document.getElementById('balance-refresh-btn');
+
+  if (!JAWWAL_BALANCE_USSD_CODE) {
+    setBalanceMeta('كود فحص الرصيد غير مُعدّ بعد بالتطبيق', true);
+    return;
+  }
+  if (!isNativeUssdAvailable()) {
+    setBalanceMeta('التحديث التلقائي متاح فقط بنسخة تطبيق أندرويد المثبتة', true);
+    return;
+  }
+
+  if (btn) btn.classList.add('spinning');
+  setBalanceMeta('جاري التحديث...', false);
+
+  try {
+    const result = await Capacitor.Plugins.UssdDialer.dial({ code: JAWWAL_BALANCE_USSD_CODE });
+
+    if (result && result.supported && result.permissionGranted && typeof result.response === 'string') {
+      const amount = extractBalanceFromResponse(result.response);
+      if (amount !== null) {
+        balanceState.amount = amount;
+        balanceState.updatedAt = Date.now();
+        saveToStorage(BALANCE_STORAGE_KEY, balanceState);
+      } else {
+        setBalanceMeta('تعذّر قراءة الرصيد من رد الشبكة', true);
+      }
+    } else if (result && !result.permissionGranted) {
+      setBalanceMeta('لازم توافق على صلاحية الاتصال لعرض الرصيد', true);
+    } else {
+      setBalanceMeta('تعذّر تنفيذ الطلب، حاول مرة أخرى', true);
+    }
+  } catch (e) {
+    setBalanceMeta('حصل خطأ أثناء التحديث', true);
+  } finally {
+    if (btn) btn.classList.remove('spinning');
+    renderBalanceCard();
+  }
 }
 
 function resetToHome() {

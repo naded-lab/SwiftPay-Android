@@ -1,0 +1,95 @@
+name: Build SwiftPay APK
+
+# يشتغل يدوياً (زر "Run workflow" من تبويب Actions)
+# أو تلقائياً مع أي push على main يلمس مجلد SwiftPay-Android
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'SwiftPay-Android/**'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Capacitor 8 موصى معه رسمياً بـ JDK 21 (متوافق مع AGP 8.13.0)
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK platform 36 + build-tools
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install npm dependencies
+        working-directory: SwiftPay-Android
+        run: npm install
+
+      - name: Add Android platform (ينشئ مجلد android/)
+        working-directory: SwiftPay-Android
+        run: npx cap add android
+
+      # ننسخ الـ plugin الأصلي (Stage 2) داخل مشروع أندرويد المتولّد حديثاً
+      - name: Inject UssdPlugin.kt
+        working-directory: SwiftPay-Android
+        run: |
+          mkdir -p android/app/src/main/java/com/nadidstudio/swiftpay
+          cp native-stage2/UssdPlugin.kt android/app/src/main/java/com/nadidstudio/swiftpay/UssdPlugin.kt
+
+      # نستبدل MainActivity.java المولّد تلقائياً بنسخة تسجّل الـ plugin
+      - name: Register plugin in MainActivity
+        working-directory: SwiftPay-Android
+        run: |
+          cat > android/app/src/main/java/com/nadidstudio/swiftpay/MainActivity.java << 'EOF'
+          package com.nadidstudio.swiftpay;
+
+          import android.os.Bundle;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  registerPlugin(UssdPlugin.class);
+                  super.onCreate(savedInstanceState);
+              }
+          }
+          EOF
+
+      - name: Add CALL_PHONE permission to AndroidManifest.xml
+        working-directory: SwiftPay-Android
+        run: |
+          sed -i 's#<application#<uses-permission android:name="android.permission.CALL_PHONE" />\n\n    <application#' android/app/src/main/AndroidManifest.xml
+          echo "---- تأكيد إضافة الصلاحية ----"
+          grep -n "CALL_PHONE" android/app/src/main/AndroidManifest.xml
+
+      - name: Capacitor sync
+        working-directory: SwiftPay-Android
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: SwiftPay-Android/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SwiftPay-debug-apk
+          path: SwiftPay-Android/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
