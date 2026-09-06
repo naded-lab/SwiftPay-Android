@@ -1,6 +1,6 @@
 {
   "name": "swiftpay-android",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "private": true,
   "description": "SwiftPay — مشروع موحّد: تطبيق أندرويد أصلي (Java/XML) داخل android/، بالإضافة لواجهة الويب/PWA في www/ ومسار Capacitor (native-stage2) كبديل.",
   "scripts": {
