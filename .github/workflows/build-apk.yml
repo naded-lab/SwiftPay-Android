@@ -1,0 +1,68 @@
+name: Build SwiftPay APK
+
+# مصدر الحقيقة الوحيد الآن هو نسخة الويب/Capacitor (www/). نسخة Native القديمة
+# مؤرشفة في docs/archive/native-app-archived/ ولم تعد تُبنى تلقائياً.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'www/**'
+      - 'native-stage2/**'
+      - 'branding/**'
+      - 'package.json'
+      - 'capacitor.config.json'
+      - '.github/workflows/build-apk.yml'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Capacitor 8 موصى معه رسمياً بـ JDK 21 (متوافق مع AGP 8.13.0)
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK platform 36 + build-tools
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Add Android platform (ينشئ android/)
+        run: npx cap add android
+
+      # نفس السكربت المستخدم محلياً عبر setup.sh — وصفة بناء واحدة لكل مكان
+      - name: تفعيل UssdPlugin + الأذونات + العلامة التجارية (سكربت موحّد مع setup.sh)
+        run: ./native-stage2/install-stage2.sh android
+
+      - name: Capacitor sync
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SwiftPay-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

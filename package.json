@@ -1,0 +1,20 @@
+{
+  "name": "swiftpay-android",
+  "version": "2.1.0",
+  "private": true,
+  "description": "SwiftPay — مشروع موحّد: تطبيق أندرويد أصلي (Java/XML) داخل android/، بالإضافة لواجهة الويب/PWA في www/ ومسار Capacitor (native-stage2) كبديل.",
+  "scripts": {
+    "sync": "cap sync android",
+    "open:android": "cap open android",
+    "start": "npx serve www",
+    "build:apk": "cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/splash-screen": "^8.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.0"
+  }
+}

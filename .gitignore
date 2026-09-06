@@ -1,0 +1,9 @@
+node_modules/
+
+# android/ الآن مجلد مُتولَّد بالكامل عبر `npx cap add android` + install-stage2.sh
+# (تماماً مثل node_modules/) — ليس مصدر حقيقة ولا يُحفظ في git.
+# التعديلات الدائمة تكون فقط في www/, native-stage2/, branding/
+android/
+
+.DS_Store
+swiftpay-release.jks
