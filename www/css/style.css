@@ -363,6 +363,69 @@ a { text-decoration: none; color: inherit; }
 .select-card:active { transform: scale(0.98); }
 .select-card h4 { font-weight: 700; }
 
+/* بطاقات تبديل نوع التحويل (صديق / تاجر) داخل خطوة واحدة */
+.type-toggle-row { display: flex; gap: 12px; margin-bottom: 18px; }
+.type-toggle-btn {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-card);
+  border-radius: var(--radius-md);
+  padding: 16px 10px;
+  cursor: pointer;
+  transition: var(--transition-theme), transform .12s ease;
+  color: var(--text-primary);
+}
+.type-toggle-btn:active { transform: scale(0.98); }
+.type-toggle-icon { font-size: 1.3rem; color: var(--text-secondary); margin-bottom: 2px; }
+.type-toggle-label { font-weight: 700; font-size: 0.85rem; }
+.type-toggle-sub { font-size: 0.65rem; color: var(--text-secondary); }
+.type-toggle-check {
+  display: none;
+  position: absolute; top: 8px; left: 8px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: var(--secondary);
+  color: #fff;
+  align-items: center; justify-content: center;
+  font-size: 0.6rem;
+}
+.type-toggle-btn.active {
+  border-color: var(--secondary);
+  background: var(--secondary-bg);
+  box-shadow: 0 0 0 1px var(--secondary-border);
+}
+.type-toggle-btn.active .type-toggle-icon,
+.type-toggle-btn.active .type-toggle-label { color: var(--secondary); }
+.type-toggle-btn.active .type-toggle-check { display: flex; }
+
+/* ---------------------- نتيجة العملية (قيد التنفيذ / نجحت / فشلت) ---------------------- */
+.result-icon {
+  width: 68px; height: 68px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.7rem;
+  margin: 0 auto 14px;
+}
+.result-icon.pending {
+  background: var(--secondary-bg); color: var(--secondary); border: 2px solid var(--secondary-border);
+}
+.result-icon.pending .icon { animation: spin 1s linear infinite; }
+.result-icon.success {
+  background: var(--primary-bg); color: var(--primary); border: 2px solid var(--primary-border);
+  animation: popIn .35s cubic-bezier(.34,1.56,.64,1) both;
+}
+.result-icon.failed {
+  background: var(--danger-bg); color: var(--danger); border: 2px solid var(--danger);
+  animation: popIn .35s cubic-bezier(.34,1.56,.64,1) both;
+}
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
 /* ---------------------- 9) معالج إنشاء الكود (Stepper) ---------------------- */
 .stepper {
   display: flex;

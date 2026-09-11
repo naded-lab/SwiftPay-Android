@@ -54,8 +54,59 @@ function migrateTransactions(list) {
 let transactionsList = migrateTransactions(loadFromStorage(STORAGE_KEYS.tx, []));
 let favoritesList = loadFromStorage(STORAGE_KEYS.fav, []);
 let appSettings = loadFromStorage(STORAGE_KEYS.settings, { notifications: true, darkMode: false });
-let savedPins = loadFromStorage(STORAGE_KEYS.pins, { jawwal: '', palpay: '' });
+// الرمز السري الفعلي يُحمَّل لاحقاً بشكل غير متزامن عبر loadSavedPinsSecurely()
+// (تخزين مشفّر بنسخة أندرويد الأصلية)؛ هذه القيمة الابتدائية فقط لمنع أخطاء undefined.
+let savedPins = { jawwal: '', palpay: '' };
 let appLockState = loadFromStorage(STORAGE_KEYS.applock, { enabled: false, hash: '', salt: '' });
+
+// ---------- تخزين مشفّر للرموز السرية المحفوظة (بدل localStorage نص صريح) ----------
+// السبب: كانت الرموز السرية لخدمتي جوال بي/بال بي تُحفظ نصاً صريحاً غير مشفّر
+// بـlocalStorage، وهو ملف عادي داخل تخزين التطبيق يمكن الوصول له عبر نسخ احتياطي
+// (adb backup) أو صلاحية root. الآن تُشفَّر عبر مفتاح في Android Keystore (لا
+// يُصدَّر أبداً) من خلال SecurePrefsPlugin. على نسخة الويب/PWA (بلا Capacitor
+// أصلي) نستمر باستخدام localStorage كاحتياط وحيد الخيار المتاح هناك.
+function isSecurePrefsAvailable() {
+  return !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() &&
+    Capacitor.Plugins && Capacitor.Plugins.SecurePrefs);
+}
+
+async function loadSavedPinsSecurely() {
+  if (isSecurePrefsAvailable()) {
+    try {
+      const { value } = await Capacitor.Plugins.SecurePrefs.get({ key: STORAGE_KEYS.pins });
+      if (value) {
+        savedPins = JSON.parse(value);
+        return;
+      }
+      // ترحيل لمرة واحدة: نسخة قديمة غير مشفّرة محفوظة من قبل هذا الإصلاح؟
+      const legacy = loadFromStorage(STORAGE_KEYS.pins, null);
+      if (legacy) {
+        savedPins = legacy;
+        await Capacitor.Plugins.SecurePrefs.set({ key: STORAGE_KEYS.pins, value: JSON.stringify(legacy) });
+        try { localStorage.removeItem(STORAGE_KEYS.pins); } catch (e) { /* تجاهل */ }
+        return;
+      }
+      savedPins = { jawwal: '', palpay: '' };
+      return;
+    } catch (e) {
+      console.warn('SwiftPay: تعذرت قراءة الرموز السرية المشفّرة، سيتم استخدام تخزين محلي عادي', e);
+    }
+  }
+  savedPins = loadFromStorage(STORAGE_KEYS.pins, { jawwal: '', palpay: '' });
+}
+
+async function saveSavedPinsSecurely(pins) {
+  if (isSecurePrefsAvailable()) {
+    try {
+      await Capacitor.Plugins.SecurePrefs.set({ key: STORAGE_KEYS.pins, value: JSON.stringify(pins) });
+      try { localStorage.removeItem(STORAGE_KEYS.pins); } catch (e) { /* تجاهل */ }
+      return;
+    } catch (e) {
+      console.warn('SwiftPay: تعذر الحفظ المشفّر، تم الحفظ محلياً كاحتياط غير مشفّر', e);
+    }
+  }
+  saveToStorage(STORAGE_KEYS.pins, pins);
+}
 
 // ---------- التاريخ والوقت الذكي (يُحسب لحظة العرض من timestamp حقيقي) ----------
 const ARABIC_MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -97,6 +148,29 @@ async function hashPin(pin, salt) {
   return bufferToHex(digest);
 }
 
+const BALANCE_AUTO_REFRESH_KEY = 'swiftpay_balance_auto_refresh';
+
+function autoRefreshJawwalBalance() {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const state = loadFromStorage(BALANCE_AUTO_REFRESH_KEY, { date: today, count: 0 });
+
+    if (state.date !== today) {
+      state.date = today;
+      state.count = 0;
+    }
+
+    if (state.count >= 4) return;
+    if (!isNativeUssdAvailable() || !JAWWAL_BALANCE_USSD_CODE) return;
+
+    state.count++;
+    saveToStorage(BALANCE_AUTO_REFRESH_KEY, state);
+    refreshJawwalBalance();
+  } catch (e) {
+    console.error('SwiftPay: فشل التحديث التلقائي للرصيد', e);
+  }
+}
+
 // ---------- بدء التطبيق: يُحجب خلف شاشة القفل إن كانت مفعّلة ----------
 function initApp() {
   renderHistory();
@@ -104,6 +178,9 @@ function initApp() {
   applySettingsUI();
   renderBalanceCard();
   hideNativeSplashScreen();
+  checkNotificationCapture();
+  refreshNotificationAccessUI();
+  maybeShowNotificationPermissionPrompt();
 }
 
 // نُخفي شاشة البداية الأصلية (شعار SwiftPay) بأنفسنا فور جهوزية أول شاشة فعلية،
@@ -116,7 +193,9 @@ function hideNativeSplashScreen() {
   } catch (e) { /* لا يوجد Capacitor (متصفح ويب عادي) — لا حاجة لفعل شيء */ }
 }
 
-window.addEventListener('load', () => {
+window.addEventListener('load', async () => {
+  await loadSavedPinsSecurely();
+
   if (appLockState && appLockState.enabled && appLockState.hash) {
     document.getElementById('applock-screen').classList.add('visible');
     hideNativeSplashScreen();
@@ -325,7 +404,7 @@ function hidePinModal() {
   document.getElementById('pin-modal-backdrop').style.display = 'none';
 }
 
-function savePinCodes() {
+async function savePinCodes() {
   const jawwalPin = document.getElementById('pin-jawwal-input').value.trim();
   const palpayPin = document.getElementById('pin-palpay-input').value.trim();
 
@@ -339,7 +418,7 @@ function savePinCodes() {
   }
 
   savedPins = { jawwal: jawwalPin, palpay: palpayPin };
-  saveToStorage(STORAGE_KEYS.pins, savedPins);
+  await saveSavedPinsSecurely(savedPins);
   updatePinStatusText();
   hidePinModal();
 }
@@ -395,11 +474,18 @@ function selectService(service) {
     iconEl.innerText = 'P';
     banner.className = 'selected-service-banner palpay-banner';
   }
+  updateTypeToggleUI();
   goToStep(2);
 }
 
+// النوع (صديق/تاجر) صار مجرد تبديل داخل نفس شاشة البيانات، بدون الانتقال
+// لخطوة منفصلة — هذا هو جوهر تقليص المعالج من 4 خطوات إلى خطوتين.
 function selectTransferType(type) {
   currentType = type;
+  updateTypeToggleUI();
+}
+
+function updateTypeToggleUI() {
   const serviceName = currentService === 'jawwal' ? 'جوال بي' : 'بال بي';
   const typeName = currentType === 'friend' ? 'صديق' : 'تاجر';
   document.getElementById('form-title').innerText = `تحويل ${serviceName} - ${typeName}`;
@@ -408,10 +494,23 @@ function selectTransferType(type) {
   const pinInput = document.getElementById('input-pin');
   pinGroup.style.display = currentService === 'palpay' ? 'none' : 'block';
   pinInput.value = savedPins[currentService] || '';
-  goToStep(3);
+
+  const friendBtn = document.getElementById('type-btn-friend');
+  const merchantBtn = document.getElementById('type-btn-merchant');
+  if (friendBtn && merchantBtn) {
+    friendBtn.classList.toggle('active', currentType === 'friend');
+    merchantBtn.classList.toggle('active', currentType === 'merchant');
+  }
 }
 
-function generateUSSD() {
+let transferSubmitting = false;
+
+// دمج ما كان "إنشاء الكود" (الخطوة 3 القديمة) و"تحويل" (الخطوة 4 القديمة) بضغطة
+// واحدة: نبني كود الـUSSD، نحفظ الحركة كمعلّقة، ننتقل فوراً لشاشة النتيجة،
+// ثم نطلق الاتصال الفعلي دون انتظار أي تأكيد إضافي من المستخدم.
+function submitTransfer() {
+  if (transferSubmitting) return;
+
   const phoneEl = document.getElementById('input-phone');
   const amountEl = document.getElementById('input-amount');
   const pinEl = document.getElementById('input-pin');
@@ -445,6 +544,14 @@ function generateUSSD() {
     return;
   }
 
+  transferSubmitting = true;
+  const submitBtn = document.getElementById('submit-transfer-btn');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.style.pointerEvents = 'none';
+    submitBtn.style.opacity = '0.6';
+  }
+
   let code = '';
   if (currentService === 'jawwal') {
     code = currentType === 'friend' ? `*110*1*${pin}*${phone}*${amount}*1#` : `*110*2*${pin}*${phone}*${amount}*1#`;
@@ -452,7 +559,17 @@ function generateUSSD() {
     code = currentType === 'friend' ? `*370*1*1*${phone}*${amount}#` : `*370*2*${phone}*${amount}#`;
   }
 
-  document.getElementById('final-ussd-code').innerText = code;
+  // نسخة مُخفاة للتخزين فقط: كود USSD الفعلي (jawwal) يحمل الرمز السري صراحة
+  // ضمن نصه، وكان يُحفظ كاملاً بسجل الحركات بشكل دائم — أي أن كل عملية كانت
+  // تُسرّب الرمز السري نصاً صريحاً بالتخزين المحلي إلى الأبد. tx.code غير
+  // مستخدَم بأي مكان بالواجهة أصلاً (لا عرض ولا نسخ)، فإخفاء الرمز هنا آمن
+  // تماماً ولا يفقد أي وظيفة ظاهرة للمستخدم.
+  const PIN_MASK = '****';
+  const codeForStorage = currentService === 'jawwal'
+    ? (currentType === 'friend'
+        ? `*110*1*${PIN_MASK}*${phone}*${amount}*1#`
+        : `*110*2*${PIN_MASK}*${phone}*${amount}*1#`)
+    : code;
 
   const txId = (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2)));
   lastPendingTxId = txId;
@@ -464,12 +581,71 @@ function generateUSSD() {
     amount: amount,
     timestamp: Date.now(),
     status: 'pending',
-    code: code,
+    code: codeForStorage,
     errorMessage: null
   });
   saveToStorage(STORAGE_KEYS.tx, transactionsList);
   renderHistory();
-  goToStep(4);
+
+  showResultPending(phone, amount);
+  goToStep(3);
+
+  callCode(code);
+}
+
+// ================= شاشة نتيجة العملية (خطوة 3) =================
+function showResultPending(phone, amount) {
+  const icon = document.getElementById('result-status-icon');
+  icon.className = 'result-icon pending';
+  icon.innerHTML = '<svg class="icon"><use href="#i-refresh"></use></svg>';
+  document.getElementById('result-status-title').innerText = 'جاري تنفيذ التحويل...';
+  document.getElementById('result-status-desc').innerText = 'يرجى الانتظار حتى تظهر نتيجة العملية';
+  document.getElementById('result-detail-phone').innerText = phone;
+  document.getElementById('result-detail-amount').innerText = amount + ' ₪';
+}
+
+function showResultOutcome(status, errorMessage) {
+  const icon = document.getElementById('result-status-icon');
+  const titleEl = document.getElementById('result-status-title');
+  const descEl = document.getElementById('result-status-desc');
+
+  if (status === 'success') {
+    icon.className = 'result-icon success';
+    icon.innerHTML = '<svg class="icon"><use href="#i-check"></use></svg>';
+    titleEl.innerText = 'تمت العملية بنجاح';
+    descEl.innerText = 'تم تنفيذ التحويل عبر الشبكة بنجاح';
+  } else if (status === 'failed') {
+    icon.className = 'result-icon failed';
+    icon.innerHTML = '<svg class="icon"><use href="#i-x"></use></svg>';
+    titleEl.innerText = 'فشلت العملية';
+    descEl.innerText = errorMessage || 'لم تكتمل عملية التحويل، حاول مرة أخرى';
+  }
+  // إعادة تفعيل زر التحويل (يفيد فقط إذا رجع المستخدم بالـ"رجوع" ثم قدّم من جديد)
+  transferSubmitting = false;
+  const submitBtn = document.getElementById('submit-transfer-btn');
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.style.pointerEvents = '';
+    submitBtn.style.opacity = '';
+  }
+}
+
+// إن كانت شاشة النتيجة معروضة حالياً لنفس الحركة، حدّثها فوراً بالنتيجة النهائية
+function reflectResultIfCurrent(txId, status, errorMessage) {
+  // كل حركة "قيد التنفيذ" تنتهي عبر هذه الدالة بالضبط (سواء يدوياً من نافذة
+  // التأكيد، أو تلقائياً عبر التقاط إشعار SMS) — لذا هذا هو المكان الصحيح
+  // الوحيد لفك قفل transferCalling. بدونها: بعد أول تحويل عبر أسلوب tel:
+  // (نسخة الويب/PWA، أو بال بي حتى بالتطبيق الأصلي)، transferCalling يبقى
+  // true للأبد لأنه لم يكن يُصفَّر أبداً بهذا المسار — فأي محاولة تحويل ثانية
+  // تدخل على `if (transferCalling) return;` بأول سطر بـcallCode() وترجع فوراً
+  // دون فتح تطبيق الاتصال إطلاقاً، بينما الواجهة تبقى عالقة على "جاري تنفيذ"
+  // لأن لا شيء غيّر حالتها. إعادة تحميل الصفحة فقط كانت تصفّر المتغيّر (لأنه
+  // بالذاكرة لا التخزين) — وهذا بالضبط ما لاحظه المستخدم كـ"لازم اطلع وارجع".
+  transferCalling = false;
+
+  if (currentStep === 3 && String(lastPendingTxId) === String(txId)) {
+    showResultOutcome(status, errorMessage);
+  }
 }
 
 function showFieldError(inputEl, message) {
@@ -491,19 +667,26 @@ function clearFieldError(inputEl) {
 
 function goToStep(step) {
   currentStep = step;
+  // مغادرة شاشة النتيجة (٣) دون تأكيد نهائي كانت تُبقي transferSubmitting=true
+  // للأبد، فيتعطّل زر "تحويل" بصمت بالمحاولة التالية (يظهر عالقاً كأنه لا
+  // يستجيب). أي عودة لخطوة الخدمة/البيانات تعني بداية محاولة جديدة فعلياً.
+  if (step < 3) transferSubmitting = false;
   document.querySelectorAll('.wizard-step').forEach(el => el.style.display = 'none');
   document.getElementById(`wizard-step-${step}`).style.display = 'block';
 
   const banner = document.getElementById('selected-service-banner');
   banner.style.display = step >= 2 ? 'flex' : 'none';
 
-  for (let i = 1; i <= 4; i++) {
+  // المُعالج البصري (stepper) صار خطوتين فقط: الخدمة، والتحويل. شاشة النتيجة
+  // (step 3) لا تُمثَّل كخطوة يملأها المستخدم، فنُبقي المؤشر على "التحويل" مكتمل.
+  const indicatorStep = Math.min(step, 2);
+  for (let i = 1; i <= 2; i++) {
     const indicator = document.getElementById(`step-${i}-ind`);
     indicator.classList.remove('active', 'completed');
-    if (i < step) {
+    if (i < indicatorStep || step >= 3) {
       indicator.classList.add('completed');
       indicator.querySelector('.step-circle').innerHTML = '<svg class="icon"><use href="#i-check"></use></svg>';
-    } else if (i === step) {
+    } else if (i === indicatorStep) {
       indicator.classList.add('active');
       indicator.querySelector('.step-circle').innerText = i;
     } else {
@@ -511,28 +694,6 @@ function goToStep(step) {
     }
   }
   document.getElementById('backBtn').style.visibility = 'visible';
-}
-
-function selectUssdText() {
-  const el = document.getElementById('final-ussd-code');
-  if (window.getSelection && document.createRange) {
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-  }
-}
-
-function copyCode() {
-  const code = document.getElementById('final-ussd-code').innerText;
-  copyTextRobust(code).then(ok => {
-    if (ok) {
-      alert('تم نسخ الكود بنجاح!');
-    } else {
-      alert('تعذر النسخ التلقائي على هذا الجهاز. اضغط مطولاً على الكود لتحديده ونسخه يدوياً.');
-    }
-  });
 }
 
 function copyTextRobust(text) {
@@ -568,20 +729,29 @@ function legacyCopy(text) {
   }
 }
 
-async function callCode() {
-  const code = document.getElementById('final-ussd-code').innerText;
+let transferCalling = false;
+
+async function callCode(code) {
+  if (transferCalling) return;
+  transferCalling = true;
 
   // Stage 2: إذا التطبيق يشتغل native جوا Capacitor وplugin الـUSSD موجود،
   // نجرب الاتصال المباشر (بدون فتح شاشة الداير) ونقرأ رد الشبكة الحقيقي.
   // أي حالة غير مؤكدة (منصة ويب عادية، صلاحية مرفوضة، Android قديم، أو خطأ)
   // بترجع بنفس أسلوب tel: الأصلي بالأسفل بدون أي تغيير.
-  if (window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() &&
+  // بال بي تحتاج جلستين تفاعليتين حقيقيتين (رمز سري ثم تأكيد بالاسم) — sendUssdRequest
+  // عاجزة عن هذا بنيوياً (طلب واحد/رد واحد فقط)، فنتخطاها لهذه الخدمة تحديداً
+  // ونروح مباشرة لأسلوب tel: (ديالوج النظام يتعامل مع الجلسات المتعددة طبيعياً).
+  const skipSilentUssd = currentService === 'palpay';
+
+  if (!skipSilentUssd && window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() &&
       Capacitor.Plugins && Capacitor.Plugins.UssdDialer) {
     try {
       const result = await Capacitor.Plugins.UssdDialer.dial({ code });
       if (result && result.supported && result.permissionGranted) {
         if (typeof result.response === 'string') {
           handleNativeUssdResponse(code, result.response);
+          transferCalling = false;
           return;
         }
         // رد فشل صريح من نظام الأندرويد نفسه (onReceiveUssdResponseFailed) — لا يحمل
@@ -589,11 +759,23 @@ async function callCode() {
         // بدل السقوط لأسلوب tel: القديم وسؤال المستخدم بلا داعٍ.
         if (typeof result.failureCode === 'number' || result.error) {
           handleNativeUssdFailure(code, result.failureCode);
+          transferCalling = false;
+          return;
+        }
+        // انتهت مهلة الانتظار (30 ثانية) بدون أي رد من الشبكة على الإطلاق. هذا
+        // يعني أن sendUssdRequest نفّذ الطلب فعلياً (قد يكون وصل للشبكة فعلاً)
+        // ولا نعرف نتيجته — لذلك يجب ألا نسقط لأسلوب tel: بالأسفل، لأن ذلك
+        // سيعيد الاتصال بنفس الكود ويُنفّذ التحويل مرتين فعلياً على الشبكة.
+        // الحل الآمن الوحيد: نطلب تأكيداً يدوياً من المستخدم بدل الافتراض أو التكرار.
+        if (result.timedOut) {
+          handleNativeUssdTimeout(code);
+          transferCalling = false;
           return;
         }
       }
     } catch (e) {
-      // نكمل بالأسلوب الأصلي بالأسفل
+      // نكمل بالأسلوب الأصلي بالأسفل — هنا فقط، لأن الاستثناء يعني أن sendUssdRequest
+      // لم يُنفَّذ فعلياً بعد (فشل مبكر)، فلا خطر تكرار تنفيذ نفس التحويل.
     }
   }
 
@@ -623,6 +805,94 @@ function armPendingResultWatcher() {
   document.addEventListener('visibilitychange', handler);
 }
 
+// ================= التحقق التلقائي عبر الإشعارات (SMS/تطبيقات) =================
+// يلتقط أندرويد إشعارات مرسلها يحتوي كلمة مرتبطة بجوال بي/بال بي (فلترة أولية
+// خفيفة فقط بجافا)، ثم نعيد استخدام نفس classifyUssdResponse بالأسفل لتحديد
+// النجاح/الفشل — مصدر واحد للكلمات المفتاحية، بلا تكرار بين اللغتين.
+async function checkNotificationCapture() {
+  try {
+    if (!(window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.NotificationCapture)) return;
+    const { items } = await Capacitor.Plugins.NotificationCapture.drain();
+    if (!items || !items.length) return;
+
+    let changed = false;
+    items.forEach(item => {
+      const classification = classifyUssdResponse(item.text || item.title || '');
+      if (classification === 'unknown') return;
+
+      const now = Date.now();
+      const digits = (item.text || '').replace(/\D/g, '');
+      const match = transactionsList.find(tx =>
+        tx.status === 'pending' &&
+        (now - tx.timestamp) < 15 * 60 * 1000 &&
+        digits.includes(tx.phone.replace(/^0/, ''))
+      );
+      if (!match) return;
+
+      match.status = classification;
+      match.errorMessage = classification === 'failed' ? 'حسب رسالة تأكيد وصلت للجهاز' : null;
+      match.verifiedBy = 'notification';
+      reflectResultIfCurrent(match.id, classification, match.errorMessage);
+      if (String(lastPendingTxId) === String(match.id)) lastPendingTxId = null;
+      changed = true;
+    });
+
+    if (changed) {
+      saveToStorage(STORAGE_KEYS.tx, transactionsList);
+      renderHistory();
+    }
+  } catch (e) {
+    console.warn('SwiftPay: تعذر فحص الإشعارات الملتقطة', e);
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') checkNotificationCapture();
+});
+
+async function isNotificationAccessEnabled() {
+  if (!(window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.NotificationCapture)) return false;
+  try {
+    const { enabled } = await Capacitor.Plugins.NotificationCapture.isEnabled();
+    return !!enabled;
+  } catch (e) { return false; }
+}
+
+async function openNotificationAccessSettings() {
+  if (!(window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.NotificationCapture)) {
+    alert('هذه الميزة متاحة فقط داخل تطبيق أندرويد المُثبّت.');
+    return;
+  }
+  await Capacitor.Plugins.NotificationCapture.openSettings();
+}
+
+async function refreshNotificationAccessUI() {
+  const desc = document.getElementById('notif-access-desc');
+  if (!desc) return;
+  const enabled = await isNotificationAccessEnabled();
+  desc.innerText = enabled ? 'مُفعّل ✓ — يتحقق تلقائياً من نتيجة الحركات' : 'اضغط للتفعيل من إعدادات النظام';
+}
+
+// تظهر تلقائياً أول ما يُفتح التطبيق (إن لم تكن الصلاحية مفعّلة أصلاً)، بنفس
+// روح طلب صلاحية نظامية عادية، بدل الاكتفاء بسطر مخفي داخل الإعدادات.
+async function maybeShowNotificationPermissionPrompt() {
+  if (!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform())) return;
+  const enabled = await isNotificationAccessEnabled();
+  if (enabled) return;
+  const modal = document.getElementById('notif-permission-prompt');
+  if (modal) modal.style.display = 'flex';
+}
+
+function dismissNotifPermissionPrompt() {
+  const modal = document.getElementById('notif-permission-prompt');
+  if (modal) modal.style.display = 'none';
+}
+
+async function acceptNotifPermissionPrompt() {
+  dismissNotifPermissionPrompt();
+  await openNotificationAccessSettings();
+}
+
 // ===== تصنيف رد USSD الحقيقي القادم من الشبكة (Native UssdDialer) =====
 // الهدف: تحديد النتيجة تلقائياً دون سؤال المستخدم "هل نجحت العملية؟" كل مرة.
 // نطبّع النص أولاً (إزالة تشكيل، توحيد الأرقام العربية/الهندية، تبسيط المسافات)
@@ -640,14 +910,15 @@ function normalizeUssdText(text) {
 const USSD_SUCCESS_PATTERNS = [
   /تم(ت)?\s*العملي[ةه]\s*بنجاح/, /نجح(ت)?\s*العملي[ةه]/, /تم\s*التحويل\s*بنجاح/,
   /تم\s*تحويل\s*المبلغ/, /تمت\s*عملية\s*التحويل/, /successful/i, /transaction\s*success/i,
-  /تم\s*إرسال\s*المبلغ/, /رصيدك\s*الحالي/, /رصيد\s*بعد\s*العملية/
+  /تم\s*إرسال\s*المبلغ/, /رصيدك\s*الحالي/, /رصيد\s*بعد\s*العملية/,
+  /رقم\s*(ال)?حركة/, /رقم\s*(ال)?مرجع/
 ];
 
 const USSD_FAILED_PATTERNS = [
   /فشل(ت)?\s*العملي[ةه]/, /لم\s*تتم\s*العملي[ةه]/, /غير\s*كاف/, /رصيد(ك)?\s*غير\s*كاف/,
   /رقم\s*(سري|سر)\s*(غير\s*صحيح|خاطئ)/, /الرمز\s*السري\s*غير\s*صحيح/, /عذراً|عفواً/,
   /حدث\s*خطأ/, /تعذر\s*(تنفيذ|إتمام)/, /غير\s*مسموح/, /الحد\s*الأقصى/, /failed/i, /error/i,
-  /الرقم\s*(المدخل\s*)?غير\s*صحيح/, /الخدمة\s*غير\s*متاحة/
+  /الرقم\s*(المدخل\s*)?غير\s*صحيح/, /الخدمة\s*غير\s*متاحة/, /مرفوض(ة)?/
 ];
 
 function classifyUssdResponse(text) {
@@ -665,7 +936,18 @@ function handleNativeUssdFailure(code, failureCode) {
   tx.errorMessage = 'تعذّر تنفيذ الطلب عبر الشبكة' + (typeof failureCode === 'number' ? ` (كود ${failureCode})` : '');
   saveToStorage(STORAGE_KEYS.tx, transactionsList);
   renderHistory();
+  reflectResultIfCurrent(tx.id, 'failed', tx.errorMessage);
   lastPendingTxId = null;
+}
+
+function handleNativeUssdTimeout(code) {
+  const tx = transactionsList.find(t => String(t.id) === String(lastPendingTxId));
+  if (!tx) return;
+  tx.timedOut = true;
+  saveToStorage(STORAGE_KEYS.tx, transactionsList);
+  // نفس مسار الرد "غير القابل للتصنيف" تماماً: تبقى الحركة "قيد المعالجة" وتُفتح
+  // نافذة التأكيد اليدوي فوقها، دون أي محاولة اتصال إضافية بنفس الكود.
+  openConfirmResult(lastPendingTxId);
 }
 
 function handleNativeUssdResponse(code, responseText) {
@@ -677,6 +959,8 @@ function handleNativeUssdResponse(code, responseText) {
 
   if (classification === 'unknown') {
     saveToStorage(STORAGE_KEYS.tx, transactionsList);
+    // ما قدرنا نصنّف الرد تلقائياً: تبقى شاشة النتيجة على "قيد التنفيذ" وتُفتح
+    // نافذة التأكيد اليدوي فوقها؛ confirmTransactionResult هي اللي بتحدّث الشاشة لاحقاً.
     openConfirmResult(lastPendingTxId);
     return;
   }
@@ -685,6 +969,7 @@ function handleNativeUssdResponse(code, responseText) {
   tx.errorMessage = classification === 'failed' ? 'حسب رد الشبكة الفعلي بعد الاتصال' : null;
   saveToStorage(STORAGE_KEYS.tx, transactionsList);
   renderHistory();
+  reflectResultIfCurrent(tx.id, classification, tx.errorMessage);
   lastPendingTxId = null;
 }
 
@@ -695,7 +980,7 @@ function handleNativeUssdResponse(code, responseText) {
 // *110*3# أو *111# ...الخ، بس ما بدي أخمن كود خاص بـJawwal Pay بلا تأكيد).
 // جرّبه يدوياً من هاتفك (اتصال USSD عادي) وشوف الكود يلي بيورّيك الرصيد، واكتبه
 // هون بدل null. لحد هيك، زر التحديث بيوضّح رسالة واضحة بدل ما يحاول كود غلط.
-const JAWWAL_BALANCE_USSD_CODE = null; // TODO: عبّي الكود الصحيح هون، مثال: '*110*3#'
+const JAWWAL_BALANCE_USSD_CODE = null;
 
 const BALANCE_STORAGE_KEY = 'swiftpay_balance_jawwal';
 let balanceState = loadFromStorage(BALANCE_STORAGE_KEY, { amount: null, updatedAt: null, hidden: false });
@@ -773,6 +1058,8 @@ async function refreshJawwalBalance() {
       } else {
         setBalanceMeta('تعذّر قراءة الرصيد من رد الشبكة', true);
       }
+    } else if (result && result.timedOut) {
+      setBalanceMeta('لم يصل رد من الشبكة خلال الوقت المتوقع، حاول لاحقاً', true);
     } else if (result && !result.permissionGranted) {
       setBalanceMeta('لازم توافق على صلاحية الاتصال لعرض الرصيد', true);
     } else {
@@ -958,6 +1245,10 @@ function openConfirmResult(txId) {
 function closeConfirmResult() {
   document.getElementById('confirm-result-backdrop').style.display = 'none';
   confirmingTxId = null;
+  // نفس تصفير transferCalling أعلاه: لو المستخدم أغلق النافذة بالضغط برّاها
+  // بدون ما يجاوب (نجح/فشل)، ما بيمر إطلاقاً عبر reflectResultIfCurrent —
+  // فبدون هذا السطر يبقى عالقاً بنفس المشكلة رغم أنه فعلياً رجع من مكالمة USSD.
+  transferCalling = false;
 }
 
 function confirmTransactionResult(result) {
@@ -967,6 +1258,7 @@ function confirmTransactionResult(result) {
     tx.errorMessage = result === 'failed' ? 'لم تكتمل العملية حسب تأكيدك بعد الاتصال' : null;
     saveToStorage(STORAGE_KEYS.tx, transactionsList);
     renderHistory();
+    reflectResultIfCurrent(tx.id, result, tx.errorMessage);
   }
   if (String(lastPendingTxId) === String(confirmingTxId)) lastPendingTxId = null;
   closeConfirmResult();

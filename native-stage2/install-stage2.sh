@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stage 2 — يفعّل UssdPlugin.kt + الأذونات + الأيقونات وشاشة البداية داخل مشروع
+# Stage 2 — يفعّل UssdPlugin.java + الأذونات + الأيقونات وشاشة البداية داخل مشروع
 # Capacitor Android تم توليده حديثاً (عبر `cap add android`).
 #
 # الاستخدام: ./native-stage2/install-stage2.sh [مسار مشروع android]
@@ -11,9 +11,9 @@ PKG_DIR="$ANDROID/app/src/main/java/com/nadidstudio/swiftpay"
 MANIFEST="$ANDROID/app/src/main/AndroidManifest.xml"
 [ -d "$ANDROID" ] || { echo "لم يتم العثور على $ANDROID — شغّل 'npx cap add android' أولاً (أو setup.sh كاملاً)."; exit 1; }
 
-echo "==> نسخ UssdPlugin.kt..."
+echo "==> نسخ UssdPlugin.java..."
 mkdir -p "$PKG_DIR"
-cp "$ROOT/native-stage2/UssdPlugin.kt" "$PKG_DIR/UssdPlugin.kt"
+cp "$ROOT/native-stage2/UssdPlugin.java" "$PKG_DIR/UssdPlugin.java"
 
 echo "==> إضافة أذونات USSD + تسجيل الـ plugin داخل MainActivity..."
 python3 - "$ANDROID" "$MANIFEST" <<'PY'
@@ -29,10 +29,10 @@ if not files: raise SystemExit('لم يتم العثور على MainActivity')
 main=files[0]; s=main.read_text()
 if 'UssdPlugin' not in s:
     if main.suffix=='.java':
-        s=s.replace('import com.getcapacitor.BridgeActivity;','import com.getcapacitor.BridgeActivity;\nimport com.nadidstudio.swiftpay.UssdPlugin;')
-        marker='public void onCreate(Bundle savedInstanceState) {'
-        if marker not in s: raise SystemExit('تعذر تحديد onCreate في MainActivity.java')
-        s=s.replace(marker,marker+'\n    registerPlugin(UssdPlugin.class);',1)
+        s=s.replace('import com.getcapacitor.BridgeActivity;','import com.getcapacitor.BridgeActivity;\nimport android.os.Bundle;\nimport com.nadidstudio.swiftpay.UssdPlugin;')
+        marker='public class MainActivity extends BridgeActivity {'
+        if marker not in s: raise SystemExit('تعذر تحديد MainActivity.java')
+        s=s.replace(marker,marker+'\n\n    @Override\n    public void onCreate(Bundle savedInstanceState) {\n        registerPlugin(UssdPlugin.class);\n        super.onCreate(savedInstanceState);\n    }',1)
     else:
         s=s.replace('import com.getcapacitor.BridgeActivity','import com.getcapacitor.BridgeActivity\nimport com.nadidstudio.swiftpay.UssdPlugin')
         marker='override fun onCreate(savedInstanceState: Bundle?) {'
@@ -45,12 +45,15 @@ if 'UssdPlugin' not in s:
 PY
 
 echo "==> منع إعادة إنشاء الـ Activity عند فتح لوحة المفاتيح (configChanges)..."
-python3 - "$MANIFEST" <<'PY'
+python3 - "$MANIFEST" <<'PY2'
 import re, sys
 path = sys.argv[1]
 required = ["orientation", "screenSize", "screenLayout", "keyboardHidden", "keyboard", "smallestScreenSize", "uiMode"]
 with open(path, encoding="utf-8") as f:
     xml = f.read()
+
+if "android:windowSoftInputMode=" not in xml:
+    xml = xml.replace("<activity", '<activity\n            android:windowSoftInputMode="adjustResize"', 1)
 
 def fix(match):
     existing = [v for v in match.group(1).split("|") if v]
@@ -60,10 +63,10 @@ def fix(match):
 new_xml, count = re.subn(r'android:configChanges="([^"]*)"', fix, xml, count=1)
 if count == 0:
     new_xml = xml.replace("<activity", f'<activity\n            android:configChanges="{"|".join(required)}"', 1)
+
 with open(path, "w", encoding="utf-8") as f:
     f.write(new_xml)
-PY
-
+PY2
 echo "==> نسخ الأيقونات وصورة شاشة البداية من branding/ (المصدر الموحّد)..."
 for d in "$ROOT"/branding/mipmap-source/mipmap-*; do
   [ -d "$d" ] || continue
@@ -80,5 +83,80 @@ for d in "$ROOT"/branding/splash-source/*; do
 done
 mkdir -p "$ANDROID/app/src/main/res/values"
 cp "$ROOT/branding/ic_launcher_background.xml" "$ANDROID/app/src/main/res/values/ic_launcher_background.xml"
+
+
+echo "==> نسخ SwiftPayNotificationListener + NotificationCapturePlugin + SecurePrefsPlugin..."
+cp "$ROOT/native-stage2/SwiftPayNotificationListener.java" "$PKG_DIR/SwiftPayNotificationListener.java"
+cp "$ROOT/native-stage2/NotificationCapturePlugin.java" "$PKG_DIR/NotificationCapturePlugin.java"
+cp "$ROOT/native-stage2/SecurePrefsPlugin.java" "$PKG_DIR/SecurePrefsPlugin.java"
+
+echo "==> تسجيل NotificationCapturePlugin داخل MainActivity + خدمة الإشعارات بالمانيفست..."
+python3 - "$ANDROID" "$MANIFEST" <<'PY3'
+from pathlib import Path
+import sys
+android = Path(sys.argv[1]); manifest = Path(sys.argv[2])
+
+files = list((android/'app/src/main').rglob('MainActivity.java')) + list((android/'app/src/main').rglob('MainActivity.kt'))
+if not files: raise SystemExit('لم يتم العثور على MainActivity')
+main = files[0]; s = main.read_text()
+if 'NotificationCapturePlugin' not in s:
+    if main.suffix == '.java':
+        s = s.replace(
+            'import com.nadidstudio.swiftpay.UssdPlugin;',
+            'import com.nadidstudio.swiftpay.UssdPlugin;\nimport com.nadidstudio.swiftpay.NotificationCapturePlugin;'
+        )
+        marker = 'registerPlugin(UssdPlugin.class);'
+        if marker in s:
+            s = s.replace(marker, marker + '\n        registerPlugin(NotificationCapturePlugin.class);', 1)
+        else:
+            marker2 = 'public void onCreate(Bundle savedInstanceState) {'
+            if marker2 not in s: raise SystemExit('تعذر تحديد onCreate في MainActivity.java')
+            s = s.replace(marker2, marker2 + '\n        registerPlugin(NotificationCapturePlugin.class);', 1)
+    else:
+        s = s.replace(
+            'import com.nadidstudio.swiftpay.UssdPlugin',
+            'import com.nadidstudio.swiftpay.UssdPlugin\nimport com.nadidstudio.swiftpay.NotificationCapturePlugin'
+        )
+        marker = 'registerPlugin(UssdPlugin::class.java)'
+        if marker in s:
+            s = s.replace(marker, marker + '\n        registerPlugin(NotificationCapturePlugin::class.java)', 1)
+    main.write_text(s)
+
+if 'SecurePrefsPlugin' not in main.read_text():
+    s = main.read_text()
+    if main.suffix == '.java':
+        s = s.replace(
+            'import com.nadidstudio.swiftpay.NotificationCapturePlugin;',
+            'import com.nadidstudio.swiftpay.NotificationCapturePlugin;\nimport com.nadidstudio.swiftpay.SecurePrefsPlugin;'
+        )
+        marker = 'registerPlugin(NotificationCapturePlugin.class);'
+        if marker in s:
+            s = s.replace(marker, marker + '\n        registerPlugin(SecurePrefsPlugin.class);', 1)
+    else:
+        s = s.replace(
+            'import com.nadidstudio.swiftpay.NotificationCapturePlugin',
+            'import com.nadidstudio.swiftpay.NotificationCapturePlugin\nimport com.nadidstudio.swiftpay.SecurePrefsPlugin'
+        )
+        marker = 'registerPlugin(NotificationCapturePlugin::class.java)'
+        if marker in s:
+            s = s.replace(marker, marker + '\n        registerPlugin(SecurePrefsPlugin::class.java)', 1)
+    main.write_text(s)
+
+text = manifest.read_text()
+if 'SwiftPayNotificationListener' not in text:
+    service_block = (
+        '        <service\n'
+        '            android:name=".SwiftPayNotificationListener"\n'
+        '            android:label="SwiftPay Notifications"\n'
+        '            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"\n'
+        '            android:exported="false">\n'
+        '            <intent-filter>\n'
+        '                <action android:name="android.service.notification.NotificationListenerService" />\n'
+        '            </intent-filter>\n'
+        '        </service>\n'
+    )
+    text = text.replace('</application>', service_block + '    </application>', 1)
+    manifest.write_text(text)
+PY3
 
 echo "تم تفعيل UssdPlugin والأذونات والعلامة التجارية (أيقونات + شاشة بداية) بنجاح."

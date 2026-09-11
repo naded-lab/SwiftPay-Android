@@ -1,95 +1,72 @@
 name: Build SwiftPay APK
 
-# مصدر الحقيقة الوحيد الآن هو نسخة الويب/Capacitor (www/). نسخة Native القديمة
-# مؤرشفة في docs/archive/native-app-archived/ ولم تعد تُبنى تلقائياً.
 on:
-  workflow_dispatch:
   push:
-    branches: [ "07" ]
+    branches: ["07"]
     paths:
-      - 'www/**'
-      - 'native-stage2/**'
-      - 'branding/**'
-      - 'package.json'
-      - 'capacitor.config.json'
-      - '.github/workflows/build-apk.yml'
+      - "www/**"
+      - "native-stage2/**"
+      - "branding/**"
+      - "package.json"
+      - "package-lock.json"
+      - "capacitor.config.json"
+      - "setup.sh"
+      - ".github/workflows/build-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build-apk:
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 22
+          cache: npm
 
-      # Capacitor 8 موصى معه رسمياً بـ JDK 21 (متوافق مع AGP 8.13.0)
-      - name: Setup JDK 21
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '21'
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
 
-      - name: Setup Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install SDK platform 36 + build-tools
+      - name: Install Android SDK packages
+        shell: bash
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Install npm dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Add Android platform (ينشئ android/)
+      - name: Generate Android project
         run: npx cap add android
-      # نفس السكربت المستخدم محلياً عبر setup.sh — وصفة بناء واحدة لكل مكان
-      - name: تفعيل UssdPlugin + الأذونات + العلامة التجارية (سكربت موحّد مع setup.sh)
-        run: ./native-stage2/install-stage2.sh android
 
-      - name: Capacitor sync
+      - name: Apply SwiftPay native layer and branding
+        run: chmod +x native-stage2/install-stage2.sh && ./native-stage2/install-stage2.sh android
+
+      - name: Sync web assets
         run: npx cap sync android
 
-      - name: Set Android version 3.0 and signing
-        env:
-          KEYSTORE_BASE64: ${{ secrets.SWIFTPAY_KEYSTORE_BASE64 }}
-          SWIFTPAY_KEYSTORE_FILE: ${{ github.workspace }}/android/swiftpay-release.keystore
-          SWIFTPAY_KEYSTORE_PASSWORD: ${{ secrets.SWIFTPAY_KEYSTORE_PASSWORD }}
-          SWIFTPAY_KEY_ALIAS: ${{ secrets.SWIFTPAY_KEY_ALIAS }}
-          SWIFTPAY_KEY_PASSWORD: ${{ secrets.SWIFTPAY_KEY_PASSWORD }}
-        run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/swiftpay-release.keystore
-          sed -i -E 's/versionName[[:space:]]*(=)?[[:space:]]*".*"/versionName "3.0"/' android/app/build.gradle
-          sed -i -E 's/versionCode[[:space:]]*(=)?[[:space:]]*[0-9]+/versionCode 30/' android/app/build.gradle
-          cat >> android/app/build.gradle <<'EOF'
-
-          afterEvaluate {
-              def signing = android.signingConfigs.create("release")
-              signing.storeFile = file(System.getenv("SWIFTPAY_KEYSTORE_FILE"))
-              signing.storePassword = System.getenv("SWIFTPAY_KEYSTORE_PASSWORD")
-              signing.keyAlias = System.getenv("SWIFTPAY_KEY_ALIAS")
-              signing.keyPassword = System.getenv("SWIFTPAY_KEY_PASSWORD")
-              android.buildTypes.release.signingConfig = signing
-          }
-          EOF
-
-      - name: Build signed Release APK
+      - name: Build debug APK
         working-directory: android
-        env:
-          SWIFTPAY_KEYSTORE_FILE: ${{ github.workspace }}/android/swiftpay-release.keystore
-          SWIFTPAY_KEYSTORE_PASSWORD: ${{ secrets.SWIFTPAY_KEYSTORE_PASSWORD }}
-          SWIFTPAY_KEY_ALIAS: ${{ secrets.SWIFTPAY_KEY_ALIAS }}
-          SWIFTPAY_KEY_PASSWORD: ${{ secrets.SWIFTPAY_KEY_PASSWORD }}
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease --stacktrace
+        run: ./gradlew --no-daemon assembleDebug
 
-      - name: Upload signed APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SwiftPay-3.0-release-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: SwiftPay-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

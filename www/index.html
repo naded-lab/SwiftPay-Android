@@ -51,6 +51,7 @@
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M3 3l18 18"/><path d="M10.6 10.6a3 3 0 0 0 4.2 4.2"/><path d="M9.9 5.1A10.9 10.9 0 0 1 12 5c6 0 10 7 10 7a17.7 17.7 0 0 1-3.2 4.1M6.2 6.2C3.6 7.9 2 12 2 12s4 7 10 7a10.4 10.4 0 0 0 4.2-.9"/></symbol>
   <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></symbol>
+  <symbol id="i-store" viewBox="0 0 24 24"><path d="M3 9 4.5 3h15L21 9"/><path d="M3 9v11h18V9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M9 20v-6h6v6"/></symbol>
   <symbol id="i-swap" viewBox="0 0 24 24"><path d="M7 4v13M7 17l-3.5-3.5M7 17l3.5-3.5"/><path d="M17 20V7M17 7l3.5 3.5M17 7l-3.5 3.5"/></symbol>
   <symbol id="i-signal" viewBox="0 0 24 24"><rect x="3" y="14" width="4" height="7" rx="1"/><rect x="10" y="10" width="4" height="11" rx="1"/><rect x="17" y="5" width="4" height="16" rx="1"/></symbol>
   <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
@@ -163,9 +164,7 @@
 
       <div class="stepper">
         <div class="step-item" id="step-1-ind"><div class="step-circle">1</div><div class="step-title">الخدمة</div></div>
-        <div class="step-item" id="step-2-ind"><div class="step-circle">2</div><div class="step-title">النوع</div></div>
-        <div class="step-item" id="step-3-ind"><div class="step-circle">3</div><div class="step-title">البيانات</div></div>
-        <div class="step-item" id="step-4-ind"><div class="step-circle">4</div><div class="step-title">الكود</div></div>
+        <div class="step-item" id="step-2-ind"><div class="step-circle">2</div><div class="step-title">التحويل</div></div>
       </div>
 
       <div class="selected-service-banner" id="selected-service-banner">
@@ -191,21 +190,25 @@
         </div>
       </div>
 
-      <!-- الخطوة 2: نوع التحويل -->
+      <!-- الخطوة 2: نوع التحويل + بيانات التحويل (مدمجة) -->
       <div class="wizard-step" id="wizard-step-2" style="display:none;">
-        <div class="select-card" onclick="selectTransferType('friend')">
-          <h4>تحويل لصديق</h4>
-          <svg class="icon" style="color:var(--text-muted);"><use href="#i-arrow-right"></use></svg>
+        <div class="section-title" style="margin-top:0;">نوع التحويل</div>
+        <div class="type-toggle-row">
+          <button type="button" class="type-toggle-btn" id="type-btn-friend" onclick="selectTransferType('friend')">
+            <span class="type-toggle-check"><svg class="icon"><use href="#i-check"></use></svg></span>
+            <svg class="icon type-toggle-icon"><use href="#i-user"></use></svg>
+            <span class="type-toggle-label">صديق (1*)</span>
+            <small class="type-toggle-sub">تحويل إلى رقم شخصي</small>
+          </button>
+          <button type="button" class="type-toggle-btn" id="type-btn-merchant" onclick="selectTransferType('merchant')">
+            <span class="type-toggle-check"><svg class="icon"><use href="#i-check"></use></svg></span>
+            <svg class="icon type-toggle-icon"><use href="#i-store"></use></svg>
+            <span class="type-toggle-label">تاجر (2*)</span>
+            <small class="type-toggle-sub">دفع تاجر أو خدمة</small>
+          </button>
         </div>
-        <div class="select-card" onclick="selectTransferType('merchant')">
-          <h4>تحويل لتاجر</h4>
-          <svg class="icon" style="color:var(--text-muted);"><use href="#i-arrow-right"></use></svg>
-        </div>
-      </div>
 
-      <!-- الخطوة 3: إدخال البيانات -->
-      <div class="wizard-step" id="wizard-step-3" style="display:none;">
-        <div class="section-title" id="form-title" style="margin-top:0;">بيانات التحويل</div>
+        <div class="section-title" id="form-title">بيانات التحويل</div>
 
         <div class="input-group">
           <label>رقم الهاتف المستفيد</label>
@@ -218,7 +221,7 @@
         <div class="input-group">
           <label>المبلغ (شيكل)</label>
           <div class="input-wrapper">
-            <input type="number" id="input-amount" placeholder="0.00" inputmode="decimal">
+            <input type="text" id="input-amount" placeholder="0.00" inputmode="decimal" pattern="[0-9]*[.,]?[0-9]*">
           </div>
         </div>
 
@@ -230,27 +233,29 @@
           </div>
         </div>
 
-        <button class="create-new-btn" onclick="generateUSSD()">إنشاء الكود</button>
+        <button class="create-new-btn" id="submit-transfer-btn" onclick="submitTransfer()">
+          <svg class="icon"><use href="#i-phone-call"></use></svg> تحويل
+        </button>
       </div>
 
-      <!-- الخطوة 4: عرض الكود -->
-      <div class="wizard-step" id="wizard-step-4" style="display:none;">
+      <!-- الخطوة 3: نتيجة العملية (تتحدّث تلقائياً: قيد التنفيذ ← نجحت / فشلت) -->
+      <div class="wizard-step" id="wizard-step-3" style="display:none;">
         <div class="success-container">
-          <div class="success-icon"><svg class="icon"><use href="#i-check"></use></svg></div>
-          <h3>تم إنشاء الكود بنجاح</h3>
-          <p style="font-size:0.8rem;color:var(--text-secondary);margin-top:6px;">اضغط اتصال لتنفيذ العملية مباشرة</p>
-
-          <div class="ussd-display-card" onclick="selectUssdText()">
-            <div class="ussd-code" id="final-ussd-code">*110*1*1234*0591234567*50*1#</div>
+          <div class="result-icon pending" id="result-status-icon">
+            <svg class="icon"><use href="#i-refresh"></use></svg>
           </div>
+          <h3 id="result-status-title">جاري تنفيذ التحويل...</h3>
+          <p id="result-status-desc" style="font-size:0.8rem;color:var(--text-secondary);margin-top:6px;">يرجى الانتظار حتى تظهر نتيجة العملية</p>
 
-          <div class="actions-row">
-            <button class="action-btn" onclick="copyCode()">
-              <svg class="icon"><use href="#i-copy"></use></svg> نسخ
-            </button>
-            <button class="action-btn call-btn" onclick="callCode()">
-              <svg class="icon"><use href="#i-phone-call"></use></svg> تحويل
-            </button>
+          <div class="ussd-display-card" style="text-align:right;">
+            <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:8px;">
+              <span style="color:var(--text-secondary);">المستفيد</span>
+              <span id="result-detail-phone" style="font-weight:700;direction:ltr;"></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:0.82rem;">
+              <span style="color:var(--text-secondary);">المبلغ</span>
+              <span id="result-detail-amount" style="font-weight:700;"></span>
+            </div>
           </div>
 
           <button class="create-new-btn" style="background:var(--bg-card);color:var(--text-primary);border:1.5px solid var(--border-card);box-shadow:none;" onclick="startNewCode()">
@@ -322,6 +327,17 @@
             <input type="checkbox" id="notif-toggle" onchange="toggleSetting('notifications', this.checked)">
             <span class="slider"></span>
           </label>
+        </div>
+
+        <div class="settings-item-row" onclick="openNotificationAccessSettings()">
+          <div class="settings-item-left">
+            <div class="settings-item-icon icon-green"><svg class="icon"><use href="#i-bell"></use></svg></div>
+            <div class="settings-item-text">
+              <h4>التحقق التلقائي عبر الرسائل</h4>
+              <p id="notif-access-desc">اضغط للتفعيل من إعدادات النظام</p>
+            </div>
+          </div>
+          <svg class="icon" style="color:var(--text-muted);"><use href="#i-arrow-left-chevron"></use></svg>
         </div>
       </div>
 
@@ -565,6 +581,24 @@
 
     <div class="sheet-actions">
       <button class="btn-secondary-flat" onclick="closeTxActions()">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- نافذة تفعيل صلاحية الإشعارات (تظهر تلقائياً أول ما يفتح التطبيق إن لم تكن مفعّلة) -->
+<div class="sheet-backdrop" id="notif-permission-prompt" style="display:none;">
+  <div class="sheet-panel">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header-row">
+      <div class="sheet-header-icon"><svg class="icon"><use href="#i-bell"></use></svg></div>
+      <div>
+        <h3>تفعيل التحقق التلقائي</h3>
+        <p class="sheet-desc">يسمح لتطبيق SwiftPay بقراءة إشعارات تأكيد التحويل (مثل رسائل جوال بي) لمعرفة نجاح العملية تلقائياً دون سؤالك في كل مرة.</p>
+      </div>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn-secondary-flat" onclick="dismissNotifPermissionPrompt()">لاحقاً</button>
+      <button class="create-new-btn" style="margin-top:0;" onclick="acceptNotifPermissionPrompt()">تفعيل الآن</button>
     </div>
   </div>
 </div>
