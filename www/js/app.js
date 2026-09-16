@@ -7,7 +7,6 @@
 let currentService = 'jawwal';
 let currentType = 'friend';
 let currentStep = 1;
-let lastPendingTxId = null; // آخر عملية قيد المعالجة بانتظار تأكيد نتيجتها
 
 // ---------- تخزين محلي دائم (يعمل بلا إنترنت، يبقى بعد إغلاق التطبيق) ----------
 const STORAGE_KEYS = {
@@ -36,15 +35,18 @@ function saveToStorage(key, value) {
 }
 
 // ---------- ترحيل سجل العمليات القديم لعدم فقدان أي بيانات ----------
+// السجل الآن سجل تنفيذ فقط: لا يحمل أي حالة نجاح/فشل/معالجة. أي حقول قديمة
+// كانت تخدم آلية التحقق المحذوفة (status, errorMessage, verifiedBy,
+// nativeResponse, timedOut) تُزال هنا نهائياً بدل تركها بيانات ميتة بالتخزين.
 function migrateTransactions(list) {
   let changed = false;
+  const DEAD_FIELDS = ['status', 'errorMessage', 'verifiedBy', 'nativeResponse', 'timedOut'];
   const migrated = (Array.isArray(list) ? list : []).map(tx => {
     const t = Object.assign({}, tx);
     if (!t.timestamp) { t.timestamp = (typeof t.id === 'number') ? t.id : Date.now(); changed = true; }
-    if (!t.status) { t.status = 'success'; changed = true; }
     if (t.code === undefined) { t.code = null; changed = true; }
-    if (t.errorMessage === undefined) { t.errorMessage = null; changed = true; }
     if ('time' in t) { delete t.time; changed = true; }
+    DEAD_FIELDS.forEach(f => { if (f in t) { delete t[f]; changed = true; } });
     return t;
   });
   if (changed) saveToStorage(STORAGE_KEYS.tx, migrated);
@@ -178,9 +180,6 @@ function initApp() {
   applySettingsUI();
   renderBalanceCard();
   hideNativeSplashScreen();
-  checkNotificationCapture();
-  refreshNotificationAccessUI();
-  maybeShowNotificationPermissionPrompt();
 }
 
 // نُخفي شاشة البداية الأصلية (شعار SwiftPay) بأنفسنا فور جهوزية أول شاشة فعلية،
@@ -451,14 +450,6 @@ function startWizard(service) {
   selectService(service);
 }
 
-function startNewCode() {
-  document.querySelectorAll('.view').forEach(el => el.classList.remove('active-view'));
-  document.getElementById('wizard-view').classList.add('active-view');
-  document.getElementById('backBtn').style.visibility = 'visible';
-  document.getElementById('page-title').innerText = 'إنشاء كود تحويل';
-  goToStep(1);
-}
-
 function selectService(service) {
   currentService = service;
   const banner = document.getElementById('selected-service-banner');
@@ -505,9 +496,8 @@ function updateTypeToggleUI() {
 
 let transferSubmitting = false;
 
-// دمج ما كان "إنشاء الكود" (الخطوة 3 القديمة) و"تحويل" (الخطوة 4 القديمة) بضغطة
-// واحدة: نبني كود الـUSSD، نحفظ الحركة كمعلّقة، ننتقل فوراً لشاشة النتيجة،
-// ثم نطلق الاتصال الفعلي دون انتظار أي تأكيد إضافي من المستخدم.
+// السجل هنا سجل تنفيذ فقط: نحفظ العملية، نطلق الاتصال، ونرجع فوراً للرئيسية.
+// لا يوجد أي انتظار أو تحقق من نتيجة الشبكة — لا حالة نجاح/فشل/معالجة إطلاقاً.
 function submitTransfer() {
   if (transferSubmitting) return;
 
@@ -572,7 +562,6 @@ function submitTransfer() {
     : code;
 
   const txId = (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2)));
-  lastPendingTxId = txId;
   transactionsList.unshift({
     id: txId,
     service: currentService,
@@ -580,72 +569,22 @@ function submitTransfer() {
     phone: phone,
     amount: amount,
     timestamp: Date.now(),
-    status: 'pending',
-    code: codeForStorage,
-    errorMessage: null
+    code: codeForStorage
   });
   saveToStorage(STORAGE_KEYS.tx, transactionsList);
   renderHistory();
 
-  showResultPending(phone, amount);
-  goToStep(3);
-
   callCode(code);
-}
 
-// ================= شاشة نتيجة العملية (خطوة 3) =================
-function showResultPending(phone, amount) {
-  const icon = document.getElementById('result-status-icon');
-  icon.className = 'result-icon pending';
-  icon.innerHTML = '<svg class="icon"><use href="#i-refresh"></use></svg>';
-  document.getElementById('result-status-title').innerText = 'جاري تنفيذ التحويل...';
-  document.getElementById('result-status-desc').innerText = 'يرجى الانتظار حتى تظهر نتيجة العملية';
-  document.getElementById('result-detail-phone').innerText = phone;
-  document.getElementById('result-detail-amount').innerText = amount + ' ₪';
-}
-
-function showResultOutcome(status, errorMessage) {
-  const icon = document.getElementById('result-status-icon');
-  const titleEl = document.getElementById('result-status-title');
-  const descEl = document.getElementById('result-status-desc');
-
-  if (status === 'success') {
-    icon.className = 'result-icon success';
-    icon.innerHTML = '<svg class="icon"><use href="#i-check"></use></svg>';
-    titleEl.innerText = 'تمت العملية بنجاح';
-    descEl.innerText = 'تم تنفيذ التحويل عبر الشبكة بنجاح';
-  } else if (status === 'failed') {
-    icon.className = 'result-icon failed';
-    icon.innerHTML = '<svg class="icon"><use href="#i-x"></use></svg>';
-    titleEl.innerText = 'فشلت العملية';
-    descEl.innerText = errorMessage || 'لم تكتمل عملية التحويل، حاول مرة أخرى';
-  }
-  // إعادة تفعيل زر التحويل (يفيد فقط إذا رجع المستخدم بالـ"رجوع" ثم قدّم من جديد)
+  // رجوع فوري للرئيسية: لا شاشة انتظار ولا تحقق من أي نتيجة — العملية سُجّلت
+  // بالسجل، وcallCode() تكمل عملها بالخلفية بغض النظر عن الشاشة المعروضة.
   transferSubmitting = false;
-  const submitBtn = document.getElementById('submit-transfer-btn');
   if (submitBtn) {
     submitBtn.disabled = false;
     submitBtn.style.pointerEvents = '';
     submitBtn.style.opacity = '';
   }
-}
-
-// إن كانت شاشة النتيجة معروضة حالياً لنفس الحركة، حدّثها فوراً بالنتيجة النهائية
-function reflectResultIfCurrent(txId, status, errorMessage) {
-  // كل حركة "قيد التنفيذ" تنتهي عبر هذه الدالة بالضبط (سواء يدوياً من نافذة
-  // التأكيد، أو تلقائياً عبر التقاط إشعار SMS) — لذا هذا هو المكان الصحيح
-  // الوحيد لفك قفل transferCalling. بدونها: بعد أول تحويل عبر أسلوب tel:
-  // (نسخة الويب/PWA، أو بال بي حتى بالتطبيق الأصلي)، transferCalling يبقى
-  // true للأبد لأنه لم يكن يُصفَّر أبداً بهذا المسار — فأي محاولة تحويل ثانية
-  // تدخل على `if (transferCalling) return;` بأول سطر بـcallCode() وترجع فوراً
-  // دون فتح تطبيق الاتصال إطلاقاً، بينما الواجهة تبقى عالقة على "جاري تنفيذ"
-  // لأن لا شيء غيّر حالتها. إعادة تحميل الصفحة فقط كانت تصفّر المتغيّر (لأنه
-  // بالذاكرة لا التخزين) — وهذا بالضبط ما لاحظه المستخدم كـ"لازم اطلع وارجع".
-  transferCalling = false;
-
-  if (currentStep === 3 && String(lastPendingTxId) === String(txId)) {
-    showResultOutcome(status, errorMessage);
-  }
+  resetToHome();
 }
 
 function showFieldError(inputEl, message) {
@@ -744,31 +683,40 @@ async function callCode(code) {
   // ونروح مباشرة لأسلوب tel: (ديالوج النظام يتعامل مع الجلسات المتعددة طبيعياً).
   const skipSilentUssd = currentService === 'palpay';
 
+  // بال بي: بدل أسلوب tel: بالأسفل (الذي يُترجَم من أندرويد كـACTION_DIAL
+  // فيفتح تطبيق الهاتف بالكامل ويطلب ضغط زر الاتصال يدوياً)، نستخدم هنا
+  // ACTION_CALL عبر الـplugin (نفس صلاحية CALL_PHONE الممنوحة أعلاه بالفعل).
+  // أندرويد يتعرف تلقائياً على كود USSD ويعرض حواره الخاص بالجلسة فوق
+  // SwiftPay مباشرة بدل تحويل المستخدم فعلياً لتطبيق الهاتف. لا رد برمجي
+  // متاحاً هنا (أندرويد لا يعيد نتيجة USSD التفاعلية لأي تطبيق)، وهذا متوقع:
+  // لا ننتظر أي نتيجة أصلاً، فقط نطلق الجلسة ونعتبر التنفيذ منتهياً من طرفنا.
+  if (skipSilentUssd && window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() &&
+      Capacitor.Plugins && Capacitor.Plugins.UssdDialer && Capacitor.Plugins.UssdDialer.dialInteractive) {
+    try {
+      const result = await Capacitor.Plugins.UssdDialer.dialInteractive({ code });
+      if (result && result.supported && result.permissionGranted && result.dialed) {
+        transferCalling = false;
+        return;
+      }
+      // صلاحية مرفوضة أو استجابة غير متوقعة — نسقط بأمان لأسلوب tel: بالأسفل
+      // بدل ترك المستخدم بلا أي وسيلة لإتمام التحويل.
+    } catch (e) {
+      // نفس منطق السقوط الآمن أعلاه عند أي استثناء غير متوقع.
+    }
+  }
+
   if (!skipSilentUssd && window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() &&
       Capacitor.Plugins && Capacitor.Plugins.UssdDialer) {
     try {
       const result = await Capacitor.Plugins.UssdDialer.dial({ code });
       if (result && result.supported && result.permissionGranted) {
-        if (typeof result.response === 'string') {
-          handleNativeUssdResponse(code, result.response);
-          transferCalling = false;
-          return;
-        }
-        // رد فشل صريح من نظام الأندرويد نفسه (onReceiveUssdResponseFailed) — لا يحمل
-        // نصاً لتصنيفه، لكنه إشارة فشل مؤكدة من الشبكة، فنسجّلها مباشرة كفشل حقيقي
-        // بدل السقوط لأسلوب tel: القديم وسؤال المستخدم بلا داعٍ.
-        if (typeof result.failureCode === 'number' || result.error) {
-          handleNativeUssdFailure(code, result.failureCode);
-          transferCalling = false;
-          return;
-        }
-        // انتهت مهلة الانتظار (30 ثانية) بدون أي رد من الشبكة على الإطلاق. هذا
-        // يعني أن sendUssdRequest نفّذ الطلب فعلياً (قد يكون وصل للشبكة فعلاً)
-        // ولا نعرف نتيجته — لذلك يجب ألا نسقط لأسلوب tel: بالأسفل، لأن ذلك
-        // سيعيد الاتصال بنفس الكود ويُنفّذ التحويل مرتين فعلياً على الشبكة.
-        // الحل الآمن الوحيد: نطلب تأكيداً يدوياً من المستخدم بدل الافتراض أو التكرار.
-        if (result.timedOut) {
-          handleNativeUssdTimeout(code);
+        // أي رد فعلي من الشبكة (نص، فشل صريح، أو حتى مهلة انتهت) يعني أن
+        // sendUssdRequest نُفّذ فعلياً على الشبكة. لا نحلّل الرد ولا نعرضه —
+        // فقط لا نسقط لأسلوب tel: بالأسفل، لأن ذلك سيعيد الاتصال بنفس الكود
+        // وينفّذ التحويل مرتين فعلياً على الشبكة (هذا أمان تنفيذ، وليس تحققاً
+        // من النتيجة).
+        if (typeof result.response === 'string' || typeof result.failureCode === 'number' ||
+            result.error || result.timedOut) {
           transferCalling = false;
           return;
         }
@@ -789,198 +737,13 @@ async function callCode(code) {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  armPendingResultWatcher();
-}
-
-// بعد فتح تطبيق الاتصال لا يمكن لأي صفحة ويب معرفة نتيجة عملية USSD الفعلية،
-// لذلك عند عودة المستخدم للتطبيق نسأله مباشرة عن النتيجة بدل افتراض النجاح.
-function armPendingResultWatcher() {
-  if (!lastPendingTxId) return;
-  const handler = () => {
-    if (document.visibilityState === 'visible') {
-      document.removeEventListener('visibilitychange', handler);
-      setTimeout(() => openConfirmResult(lastPendingTxId), 400);
-    }
-  };
-  document.addEventListener('visibilitychange', handler);
-}
-
-// ================= التحقق التلقائي عبر الإشعارات (SMS/تطبيقات) =================
-// يلتقط أندرويد إشعارات مرسلها يحتوي كلمة مرتبطة بجوال بي/بال بي (فلترة أولية
-// خفيفة فقط بجافا)، ثم نعيد استخدام نفس classifyUssdResponse بالأسفل لتحديد
-// النجاح/الفشل — مصدر واحد للكلمات المفتاحية، بلا تكرار بين اللغتين.
-async function checkNotificationCapture() {
-  try {
-    if (!(window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.NotificationCapture)) return;
-    const { items } = await Capacitor.Plugins.NotificationCapture.drain();
-    if (!items || !items.length) return;
-
-    let changed = false;
-    items.forEach(item => {
-      const classification = classifyUssdResponse(item.text || item.title || '');
-      if (classification === 'unknown') return;
-
-      const now = Date.now();
-      const digits = (item.text || '').replace(/\D/g, '');
-      const match = transactionsList.find(tx =>
-        tx.status === 'pending' &&
-        (now - tx.timestamp) < 15 * 60 * 1000 &&
-        digits.includes(tx.phone.replace(/^0/, ''))
-      );
-      if (!match) return;
-
-      match.status = classification;
-      match.errorMessage = classification === 'failed' ? 'حسب رسالة تأكيد وصلت للجهاز' : null;
-      match.verifiedBy = 'notification';
-      reflectResultIfCurrent(match.id, classification, match.errorMessage);
-      if (String(lastPendingTxId) === String(match.id)) lastPendingTxId = null;
-      changed = true;
-    });
-
-    if (changed) {
-      saveToStorage(STORAGE_KEYS.tx, transactionsList);
-      renderHistory();
-    }
-  } catch (e) {
-    console.warn('SwiftPay: تعذر فحص الإشعارات الملتقطة', e);
-  }
-}
-
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') checkNotificationCapture();
-});
-
-async function isNotificationAccessEnabled() {
-  if (!(window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.NotificationCapture)) return false;
-  try {
-    const { enabled } = await Capacitor.Plugins.NotificationCapture.isEnabled();
-    return !!enabled;
-  } catch (e) { return false; }
-}
-
-async function openNotificationAccessSettings() {
-  if (!(window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.NotificationCapture)) {
-    alert('هذه الميزة متاحة فقط داخل تطبيق أندرويد المُثبّت.');
-    return;
-  }
-  await Capacitor.Plugins.NotificationCapture.openSettings();
-}
-
-async function refreshNotificationAccessUI() {
-  const desc = document.getElementById('notif-access-desc');
-  if (!desc) return;
-  const enabled = await isNotificationAccessEnabled();
-  desc.innerText = enabled ? 'مُفعّل ✓ — يتحقق تلقائياً من نتيجة الحركات' : 'اضغط للتفعيل من إعدادات النظام';
-}
-
-// تظهر تلقائياً أول ما يُفتح التطبيق (إن لم تكن الصلاحية مفعّلة أصلاً)، بنفس
-// روح طلب صلاحية نظامية عادية، بدل الاكتفاء بسطر مخفي داخل الإعدادات.
-async function maybeShowNotificationPermissionPrompt() {
-  if (!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform())) return;
-  const enabled = await isNotificationAccessEnabled();
-  if (enabled) return;
-  const modal = document.getElementById('notif-permission-prompt');
-  if (modal) modal.style.display = 'flex';
-}
-
-function dismissNotifPermissionPrompt() {
-  const modal = document.getElementById('notif-permission-prompt');
-  if (modal) modal.style.display = 'none';
-}
-
-async function acceptNotifPermissionPrompt() {
-  dismissNotifPermissionPrompt();
-  await openNotificationAccessSettings();
-}
-
-// ===== تصنيف رد USSD الحقيقي القادم من الشبكة (Native UssdDialer) =====
-// الهدف: تحديد النتيجة تلقائياً دون سؤال المستخدم "هل نجحت العملية؟" كل مرة.
-// نطبّع النص أولاً (إزالة تشكيل، توحيد الأرقام العربية/الهندية، تبسيط المسافات)
-// ثم نقارنه بقاموس موسّع من الصيغ الشائعة في ردود جوال بي/بال بي وموزّعي USSD
-// عموماً بفلسطين. أي رد لا يتطابق مع أي نمط معروف يبقى 'unknown' ويُعرض عندها
-// (فقط عندها) سؤال التأكيد اليدوي — حماية من تصنيف تلقائي خاطئ صامت.
-function normalizeUssdText(text) {
-  return (text || '')
-    .replace(/[\u064B-\u065F\u0670]/g, '') // إزالة التشكيل
-    .replace(/[٠١٢٣٤٥٦٧٨٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)) // أرقام عربية → إنجليزية
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-const USSD_SUCCESS_PATTERNS = [
-  /تم(ت)?\s*العملي[ةه]\s*بنجاح/, /نجح(ت)?\s*العملي[ةه]/, /تم\s*التحويل\s*بنجاح/,
-  /تم\s*تحويل\s*المبلغ/, /تمت\s*عملية\s*التحويل/, /successful/i, /transaction\s*success/i,
-  /تم\s*إرسال\s*المبلغ/, /رصيدك\s*الحالي/, /رصيد\s*بعد\s*العملية/,
-  /رقم\s*(ال)?حركة/, /رقم\s*(ال)?مرجع/
-];
-
-const USSD_FAILED_PATTERNS = [
-  /فشل(ت)?\s*العملي[ةه]/, /لم\s*تتم\s*العملي[ةه]/, /غير\s*كاف/, /رصيد(ك)?\s*غير\s*كاف/,
-  /رقم\s*(سري|سر)\s*(غير\s*صحيح|خاطئ)/, /الرمز\s*السري\s*غير\s*صحيح/, /عذراً|عفواً/,
-  /حدث\s*خطأ/, /تعذر\s*(تنفيذ|إتمام)/, /غير\s*مسموح/, /الحد\s*الأقصى/, /failed/i, /error/i,
-  /الرقم\s*(المدخل\s*)?غير\s*صحيح/, /الخدمة\s*غير\s*متاحة/, /مرفوض(ة)?/
-];
-
-function classifyUssdResponse(text) {
-  const t = normalizeUssdText(text);
-  if (!t) return 'unknown';
-  if (USSD_FAILED_PATTERNS.some(re => re.test(t))) return 'failed';
-  if (USSD_SUCCESS_PATTERNS.some(re => re.test(t))) return 'success';
-  return 'unknown';
-}
-
-function handleNativeUssdFailure(code, failureCode) {
-  const tx = transactionsList.find(t => String(t.id) === String(lastPendingTxId));
-  if (!tx) return;
-  tx.status = 'failed';
-  tx.errorMessage = 'تعذّر تنفيذ الطلب عبر الشبكة' + (typeof failureCode === 'number' ? ` (كود ${failureCode})` : '');
-  saveToStorage(STORAGE_KEYS.tx, transactionsList);
-  renderHistory();
-  reflectResultIfCurrent(tx.id, 'failed', tx.errorMessage);
-  lastPendingTxId = null;
-}
-
-function handleNativeUssdTimeout(code) {
-  const tx = transactionsList.find(t => String(t.id) === String(lastPendingTxId));
-  if (!tx) return;
-  tx.timedOut = true;
-  saveToStorage(STORAGE_KEYS.tx, transactionsList);
-  // نفس مسار الرد "غير القابل للتصنيف" تماماً: تبقى الحركة "قيد المعالجة" وتُفتح
-  // نافذة التأكيد اليدوي فوقها، دون أي محاولة اتصال إضافية بنفس الكود.
-  openConfirmResult(lastPendingTxId);
-}
-
-function handleNativeUssdResponse(code, responseText) {
-  const tx = transactionsList.find(t => String(t.id) === String(lastPendingTxId));
-  if (!tx) return;
-
-  tx.nativeResponse = responseText;
-  const classification = classifyUssdResponse(responseText);
-
-  if (classification === 'unknown') {
-    saveToStorage(STORAGE_KEYS.tx, transactionsList);
-    // ما قدرنا نصنّف الرد تلقائياً: تبقى شاشة النتيجة على "قيد التنفيذ" وتُفتح
-    // نافذة التأكيد اليدوي فوقها؛ confirmTransactionResult هي اللي بتحدّث الشاشة لاحقاً.
-    openConfirmResult(lastPendingTxId);
-    return;
-  }
-
-  tx.status = classification;
-  tx.errorMessage = classification === 'failed' ? 'حسب رد الشبكة الفعلي بعد الاتصال' : null;
-  saveToStorage(STORAGE_KEYS.tx, transactionsList);
-  renderHistory();
-  reflectResultIfCurrent(tx.id, classification, tx.errorMessage);
-  lastPendingTxId = null;
+  transferCalling = false;
 }
 
 // ===== Stage 3: بطاقة رصيد جوال بي =====
 //
-// ⚠️ نقطة مفتوحة مهمة: JAWWAL_BALANCE_USSD_CODE تحت لسا فاضي (null) لأنو ما
-// عندي الكود الفعلي يلي بيرجع رصيد جوال بي عبر USSD (مثال شائع بمشغّلين تانيين:
-// *110*3# أو *111# ...الخ، بس ما بدي أخمن كود خاص بـJawwal Pay بلا تأكيد).
-// جرّبه يدوياً من هاتفك (اتصال USSD عادي) وشوف الكود يلي بيورّيك الرصيد، واكتبه
-// هون بدل null. لحد هيك، زر التحديث بيوضّح رسالة واضحة بدل ما يحاول كود غلط.
-const JAWWAL_BALANCE_USSD_CODE = null;
+// كود فحص رصيد جوال بي عبر USSD (تم تأكيده يدويًا من الهاتف): *110*3#
+const JAWWAL_BALANCE_USSD_CODE = '*110*3#';
 
 const BALANCE_STORAGE_KEY = 'swiftpay_balance_jawwal';
 let balanceState = loadFromStorage(BALANCE_STORAGE_KEY, { amount: null, updatedAt: null, hidden: false });
@@ -1017,8 +780,8 @@ function isNativeUssdAvailable() {
     Capacitor.Plugins && Capacitor.Plugins.UssdDialer);
 }
 
-// نفس فلسفة classifyUssdResponse: ما بنخمن صيغة الرد، بس بنطلع أول رقم عشري
-// موجود بالنص (الصيغة الشائعة لردود USSD اللي بتذكر الرصيد بالنص)
+// لا نخمّن صيغة الرد، بس نطلع أول رقم عشري موجود بالنص (الصيغة الشائعة
+// لردود USSD اللي بتذكر الرصيد بالنص)
 function extractBalanceFromResponse(text) {
   const match = (text || '').match(/(\d+(?:[.,]\d+)?)/);
   return match ? match[1].replace(',', '.') : null;
@@ -1091,53 +854,39 @@ function switchTab(tabName) {
   currentStep = 1;
 }
 
-const TX_STATUS_META = {
-  success: { label: 'تمت بنجاح', cls: 'success', icon: '✅' },
-  failed: { label: 'فشلت', cls: 'failed', icon: '❌' },
-  pending: { label: 'قيد المعالجة', cls: 'pending', icon: '⏳' }
-};
-
 function txCardInner(tx) {
   const sName = tx.service === 'jawwal' ? 'جوال بي' : 'بال بي';
   const tName = tx.type === 'friend' ? 'صديق' : 'تاجر';
   const iconChar = tx.service === 'jawwal' ? 'J' : 'P';
-  const meta = TX_STATUS_META[tx.status] || TX_STATUS_META.success;
-  const errorLine = (tx.status === 'failed' && tx.errorMessage)
-    ? `<p style="color:var(--danger); font-size:0.68rem; margin-top:2px;">${tx.errorMessage}</p>` : '';
   return `
     <div class="tx-right">
       <div class="tx-icon ${tx.service}">${iconChar}</div>
       <div class="tx-details">
         <h4>${sName} - ${tName}</h4>
         <p>${tx.phone}</p>
-        ${errorLine}
       </div>
     </div>
     <div class="tx-left">
       <div class="tx-amount">${tx.amount} شيكل</div>
       <div class="tx-time">${formatArabicTime(new Date(tx.timestamp))}</div>
-      <span class="tx-status ${meta.cls}">${meta.icon} ${meta.label}</span>
     </div>
   `;
 }
 
-// بطاقة داخل صفحة السجل الكاملة: مجمّعة تحت عنوان يوم واحد، الوقت فقط بجانب كل عملية،
-// والضغط عليها يفتح قائمة إجراءات (حذف/إعادة) للعمليات المكتملة، أو تأكيد النتيجة للمعلّقة.
+// بطاقة داخل صفحة السجل الكاملة: مجمّعة تحت عنوان يوم واحد، الوقت فقط بجانب كل عملية.
+// سجل تنفيذ فقط — لا حالة نجاح/فشل/معالجة، والضغط عليها يفتح قائمة إجراءات
+// (حذف/إعادة) دائماً.
 function historyCard(tx) {
-  const isPending = tx.status === 'pending';
-  const handler = isPending ? `openConfirmResult('${tx.id}')` : `openTxActions('${tx.id}')`;
-  return `<div class="transaction-card ${isPending ? 'is-pending' : ''}" onclick="${handler}">${txCardInner(tx)}</div>`;
+  return `<div class="transaction-card" onclick="openTxActions('${tx.id}')">${txCardInner(tx)}</div>`;
 }
 
 // بطاقة معاينة داخل الرئيسية (آخر 3 عمليات): تعرض التاريخ الذكي كاملاً كما كانت، بلا إجراءات إضافية
 function homePreviewCard(tx) {
-  const isPending = tx.status === 'pending';
   const sName = tx.service === 'jawwal' ? 'جوال بي' : 'بال بي';
   const tName = tx.type === 'friend' ? 'صديق' : 'تاجر';
   const iconChar = tx.service === 'jawwal' ? 'J' : 'P';
-  const meta = TX_STATUS_META[tx.status] || TX_STATUS_META.success;
   return `
-    <div class="transaction-card ${isPending ? 'is-pending' : ''}" ${isPending ? `onclick="openConfirmResult('${tx.id}')"` : ''}>
+    <div class="transaction-card">
       <div class="tx-right">
         <div class="tx-icon ${tx.service}">${iconChar}</div>
         <div class="tx-details"><h4>${sName} - ${tName}</h4><p>${tx.phone}</p></div>
@@ -1145,7 +894,6 @@ function homePreviewCard(tx) {
       <div class="tx-left">
         <div class="tx-amount">${tx.amount} شيكل</div>
         <div class="tx-time">${formatSmartDate(tx.timestamp)}</div>
-        <span class="tx-status ${meta.cls}">${meta.icon} ${meta.label}</span>
       </div>
     </div>
   `;
@@ -1230,38 +978,6 @@ function repeatTransactionFromActions() {
     document.getElementById('input-phone').value = tx.phone;
     document.getElementById('input-amount').value = tx.amount;
   }, 100);
-}
-
-// ================= تأكيد نتيجة عملية معلّقة =================
-let confirmingTxId = null;
-
-function openConfirmResult(txId) {
-  const tx = transactionsList.find(t => String(t.id) === String(txId));
-  if (!tx || tx.status !== 'pending') return;
-  confirmingTxId = txId;
-  document.getElementById('confirm-result-backdrop').style.display = 'flex';
-}
-
-function closeConfirmResult() {
-  document.getElementById('confirm-result-backdrop').style.display = 'none';
-  confirmingTxId = null;
-  // نفس تصفير transferCalling أعلاه: لو المستخدم أغلق النافذة بالضغط برّاها
-  // بدون ما يجاوب (نجح/فشل)، ما بيمر إطلاقاً عبر reflectResultIfCurrent —
-  // فبدون هذا السطر يبقى عالقاً بنفس المشكلة رغم أنه فعلياً رجع من مكالمة USSD.
-  transferCalling = false;
-}
-
-function confirmTransactionResult(result) {
-  const tx = transactionsList.find(t => String(t.id) === String(confirmingTxId));
-  if (tx) {
-    tx.status = result;
-    tx.errorMessage = result === 'failed' ? 'لم تكتمل العملية حسب تأكيدك بعد الاتصال' : null;
-    saveToStorage(STORAGE_KEYS.tx, transactionsList);
-    renderHistory();
-    reflectResultIfCurrent(tx.id, result, tx.errorMessage);
-  }
-  if (String(lastPendingTxId) === String(confirmingTxId)) lastPendingTxId = null;
-  closeConfirmResult();
 }
 
 function clearHistory() {

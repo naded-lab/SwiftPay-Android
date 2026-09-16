@@ -170,4 +170,75 @@ public class UssdPlugin extends Plugin {
             call.resolve(ret);
         }
     }
+
+    // ===== جلسة تفاعلية حقيقية (بال بي) عبر ACTION_CALL =====
+    // بخلاف dial() أعلاه (sendUssdRequest: طلب واحد/رد واحد فقط)، هذه الطريقة
+    // تطلب الاتصال مباشرة عبر ACTION_CALL بنفس صلاحية CALL_PHONE الممنوحة
+    // أصلاً أعلاه. أندرويد يتعرف تلقائياً على أكواد USSD/MMI ويعرض حواره
+    // الخاص بالجلسة (يدعم عدة جولات: رمز سري ثم تأكيد) كنافذة عائمة فوق
+    // التطبيق الحالي — لا ننتقل فعلياً لتطبيق الهاتف، ولا يوجد رد برمجي
+    // نقرأه هنا (أندرويد لا يوفر callback لهذا المسار)، لذلك الجافاسكربت
+    // يعتمد على armPendingResultWatcher()/التقاط الإشعارات لتحديد النتيجة
+    // لاحقاً، تماماً كما كان يحدث سابقاً مع أسلوب tel: القديم.
+    @PluginMethod
+    public void dialInteractive(PluginCall call) {
+        String code = call.getString("code");
+        if (code == null || code.isEmpty()) {
+            call.reject("code مطلوب");
+            return;
+        }
+        if (!hasRequiredPermissions()) {
+            requestAllPermissions(call, "phonePermsCallbackInteractive");
+            return;
+        }
+        performInteractiveCall(call, code);
+    }
+
+    @PermissionCallback
+    private void phonePermsCallbackInteractive(PluginCall call) {
+        String code = call.getString("code");
+        if (!hasRequiredPermissions() || code == null || code.isEmpty()) {
+            JSObject ret = new JSObject();
+            ret.put("supported", true);
+            ret.put("permissionGranted", false);
+            call.resolve(ret);
+            return;
+        }
+        performInteractiveCall(call, code);
+    }
+
+    private void performInteractiveCall(PluginCall call, String code) {
+        try {
+            android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_CALL);
+            intent.setData(android.net.Uri.parse("tel:" + android.net.Uri.encode(code)));
+
+            android.app.Activity activity = getActivity();
+            if (activity != null) {
+                // بدون NEW_TASK: الاتصال يُطلق من نفس نشاط SwiftPay الحالي، فلا
+                // يُنشئ أندرويد Task منفصلاً يبدو للمستخدم كتبديل تطبيق كامل.
+                activity.startActivity(intent);
+            } else {
+                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+            }
+
+            JSObject ret = new JSObject();
+            ret.put("supported", true);
+            ret.put("permissionGranted", true);
+            ret.put("dialed", true);
+            call.resolve(ret);
+        } catch (SecurityException e) {
+            JSObject ret = new JSObject();
+            ret.put("supported", true);
+            ret.put("permissionGranted", false);
+            call.resolve(ret);
+        } catch (Exception e) {
+            JSObject ret = new JSObject();
+            ret.put("supported", true);
+            ret.put("permissionGranted", true);
+            ret.put("error", e.getMessage() != null ? e.getMessage() : "dial_error");
+            call.resolve(ret);
+        }
+    }
+
 }
