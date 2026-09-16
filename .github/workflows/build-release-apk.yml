@@ -12,7 +12,7 @@ on:
       - "package-lock.json"
       - "capacitor.config.json"
       - "setup.sh"
-      - ".github/workflows/build-apk.yml"
+      - ".github/workflows/build-release-apk.yml"
   workflow_dispatch:
 
 permissions:
