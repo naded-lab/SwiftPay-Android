@@ -149,5 +149,3 @@ jobs:
           name: SwiftPay-release-apk
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
-
-# workflow refresh
