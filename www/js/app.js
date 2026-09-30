@@ -637,19 +637,38 @@ function addTransactionRecord(t) {
 }
 
 // ---------- شاشة "جاري تنفيذ التحويل" والنتيجة ----------
+function execDetailsHtml(t) {
+  const svc = t.service === 'jawwal' ? 'jawwal' : 'palpay';
+  const letter = svc === 'jawwal' ? 'J' : 'P';
+  const rows = [];
+  if (t.name) rows.push(`<div class="exec-row"><span class="exec-row-ico"><svg class="icon"><use href="#i-user"></use></svg></span><span class="exec-row-label">المستفيد</span><span class="exec-row-val">${escapeHtml(t.name)}</span></div>`);
+  rows.push(`<div class="exec-row"><span class="exec-row-ico"><svg class="icon"><use href="#i-phone-call"></use></svg></span><span class="exec-row-label">الرقم</span><span class="exec-row-val exec-ltr">${escapeHtml(t.phone)}</span></div>`);
+  rows.push(`<div class="exec-row"><span class="exec-row-ico exec-row-letter">${letter}</span><span class="exec-row-label">نوع التحويل</span><span class="exec-row-val">${serviceLabel(t.service)} - ${typeLabel(t.type)}</span></div>`);
+  return `
+    <div class="exec-amount">
+      <small>المبلغ</small>
+      <b><span>${escapeHtml(t.amount)}</span><i>₪</i></b>
+    </div>
+    <div class="exec-rows">${rows.join('')}</div>`;
+}
+
 function showExecScreen(t) {
+  const card = document.getElementById('exec-card');
+  applyServiceTheme(card, t.service === 'jawwal' ? 'jawwal' : 'palpay');
+  card.dataset.state = 'pending';
   const icon = document.getElementById('exec-icon');
   icon.className = 'result-icon pending';
   icon.innerHTML = '<svg class="icon"><use href="#i-refresh"></use></svg>';
   document.getElementById('exec-title').innerText = 'جاري تنفيذ التحويل';
   document.getElementById('exec-sub').innerText = 'الرجاء الانتظار وعدم إغلاق التطبيق';
-  document.getElementById('exec-details').innerHTML = detailsRowsHtml(t);
+  document.getElementById('exec-details').innerHTML = execDetailsHtml(t);
   document.getElementById('exec-done-btn').style.display = 'none';
   document.getElementById('exec-screen').style.display = 'flex';
 }
 
 function finishExecScreen(ok, title, sub) {
   const icon = document.getElementById('exec-icon');
+  document.getElementById('exec-card').dataset.state = ok ? 'success' : 'failed';
   icon.className = 'result-icon ' + (ok ? 'success' : 'failed');
   icon.innerHTML = `<svg class="icon"><use href="#${ok ? 'i-check' : 'i-x'}"></use></svg>`;
   document.getElementById('exec-title').innerText = title;

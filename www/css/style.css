@@ -1009,8 +1009,52 @@ body.keyboard-open .content-area { padding-bottom: 18px; }
   display: flex; align-items: center; justify-content: center; padding: 24px;
   animation: fadeIn .2s ease;
 }
-.exec-card { width: 100%; max-width: 360px; text-align: center; }
-.exec-card h3 { font-size: 1.15rem; font-weight: 800; margin-bottom: 6px; }
+.exec-card {
+  width: 100%; max-width: 380px; text-align: center;
+  background: var(--surface-raised, var(--bg-card));
+  border: 1px solid var(--border-card);
+  border-radius: 28px; padding: 30px 18px 18px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.18);
+  position: relative; overflow: hidden;
+  animation: popIn .3s cubic-bezier(.34,1.56,.64,1) both;
+}
+.exec-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 5px;
+  background: var(--svc, var(--primary)); opacity: .9;
+}
+.exec-card[data-state="success"]::before { background: var(--primary); }
+.exec-card[data-state="failed"]::before { background: var(--danger); }
+.exec-status { position: relative; width: 96px; height: 96px; margin: 0 auto 14px; display: flex; align-items: center; justify-content: center; }
+.exec-status .result-icon { margin: 0; width: 76px; height: 76px; font-size: 1.9rem; position: relative; z-index: 1; }
+.exec-card[data-state="pending"] .exec-status::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%;
+  border: 2px solid var(--svc, var(--secondary)); opacity: .35;
+  animation: execPulse 1.6s ease-out infinite;
+}
+@keyframes execPulse { from { transform: scale(.78); opacity: .55; } to { transform: scale(1.12); opacity: 0; } }
+.exec-card[data-state="pending"] .result-icon.pending {
+  background: var(--svc-bg, var(--secondary-bg)); color: var(--svc, var(--secondary)); border-color: var(--svc-border, var(--secondary-border));
+}
+.exec-details {
+  background: var(--bg-card-soft, var(--bg-card)); border: 1px solid var(--border-card);
+  border-radius: 20px; padding: 14px 14px 6px; margin: 4px 0 14px; text-align: right;
+}
+.exec-amount { text-align: center; padding: 4px 0 14px; border-bottom: 1px dashed var(--border-card-strong); margin-bottom: 4px; }
+.exec-amount small { display: block; font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 2px; }
+.exec-amount b { display: inline-flex; align-items: baseline; gap: 6px; font-size: 2.3rem; font-weight: 800; color: var(--text-primary); letter-spacing: -0.02em; direction: ltr; }
+.exec-amount b i { font-style: normal; font-size: 1.1rem; font-weight: 700; color: var(--svc, var(--primary)); }
+.exec-row { display: flex; align-items: center; gap: 10px; padding: 11px 0; }
+.exec-row + .exec-row { border-top: 1px solid var(--border-card); }
+.exec-row-ico {
+  width: 32px; height: 32px; flex: none; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--svc-bg, var(--secondary-bg)); color: var(--svc, var(--secondary)); font-size: 0.95rem;
+}
+.exec-row-letter { font-weight: 800; font-size: 0.85rem; }
+.exec-row-label { font-size: 0.78rem; color: var(--text-secondary); }
+.exec-row-val { margin-right: auto; font-size: 0.9rem; font-weight: 700; color: var(--text-primary); }
+.exec-ltr { direction: ltr; unicode-bidi: plaintext; letter-spacing: .02em; }
+.exec-card h3 { font-size: 1.2rem; font-weight: 800; margin-bottom: 6px; }
 .exec-sub { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.7; margin-bottom: 16px; }
 .exec-card .create-new-btn { margin-top: 4px; }
 

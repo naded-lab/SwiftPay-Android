@@ -584,11 +584,13 @@
 
 <!-- شاشة تنفيذ التحويل / نتيجته -->
 <div class="exec-screen" id="exec-screen" style="display:none;">
-  <div class="exec-card">
-    <div class="result-icon pending" id="exec-icon"><svg class="icon"><use href="#i-refresh"></use></svg></div>
+  <div class="exec-card" id="exec-card">
+    <div class="exec-status">
+      <div class="result-icon pending" id="exec-icon"><svg class="icon"><use href="#i-refresh"></use></svg></div>
+    </div>
     <h3 id="exec-title">جاري تنفيذ التحويل</h3>
     <p class="exec-sub" id="exec-sub"></p>
-    <div class="confirm-details" id="exec-details"></div>
+    <div class="exec-details" id="exec-details"></div>
     <button class="create-new-btn" id="exec-done-btn" style="display:none;" onclick="closeExecScreen()">حسناً</button>
   </div>
 </div>
