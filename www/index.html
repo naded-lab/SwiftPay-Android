@@ -91,9 +91,7 @@
       <svg class="icon"><use href="#i-arrow-left-chevron"></use></svg>
     </button>
     <div class="app-title" id="page-title">SwiftPay</div>
-    <button class="icon-btn" onclick="switchTab('settings')">
-      <svg class="icon"><use href="#i-settings"></use></svg>
-    </button>
+    <div class="icon-btn" aria-hidden="true" style="visibility:hidden; pointer-events:none;"></div>
   </header>
 
   <!-- منطقة المحتوى -->
@@ -162,35 +160,12 @@
     <!-- ============ شاشة 2: معالج إنشاء الكود ============ -->
     <section class="view" id="wizard-view">
 
-      <div class="stepper">
-        <div class="step-item" id="step-1-ind"><div class="step-circle">1</div><div class="step-title">الخدمة</div></div>
-        <div class="step-item" id="step-2-ind"><div class="step-circle">2</div><div class="step-title">التحويل</div></div>
-      </div>
-
       <div class="selected-service-banner" id="selected-service-banner">
         <span id="banner-service-name">الخدمة المختارة</span>
         <span class="service-icon" id="banner-service-icon" style="width:26px;height:26px;font-size:0.75rem;"></span>
       </div>
 
-      <!-- الخطوة 1: اختيار الخدمة -->
-      <div class="wizard-step" id="wizard-step-1">
-        <div class="select-card" onclick="selectService('jawwal')">
-          <div class="service-info">
-            <div class="service-icon" style="background:var(--primary-bg);color:var(--primary);border:1px solid var(--primary-border);">J</div>
-            <h4>جوال بي</h4>
-          </div>
-          <svg class="icon" style="color:var(--text-muted);"><use href="#i-arrow-right"></use></svg>
-        </div>
-        <div class="select-card" onclick="selectService('palpay')">
-          <div class="service-info">
-            <div class="service-icon" style="background:var(--secondary-bg);color:var(--secondary);border:1px solid var(--secondary-border);">P</div>
-            <h4>بال بي</h4>
-          </div>
-          <svg class="icon" style="color:var(--text-muted);"><use href="#i-arrow-right"></use></svg>
-        </div>
-      </div>
-
-      <!-- الخطوة 2: نوع التحويل + بيانات التحويل (مدمجة) -->
+      <!-- شاشة التحويل: نوع التحويل + بيانات التحويل -->
       <div class="wizard-step" id="wizard-step-2" style="display:none;">
         <div class="section-title" style="margin-top:0;">نوع التحويل</div>
         <div class="type-toggle-row">
@@ -212,9 +187,15 @@
 
         <div class="input-group">
           <label>رقم الهاتف المستفيد</label>
-          <div class="input-wrapper">
-            <input type="tel" id="input-phone" placeholder="05XXXXXXXX" inputmode="numeric" maxlength="10">
-            <span class="input-icon"><svg class="icon"><use href="#i-phone-call"></use></svg></span>
+          <div class="phone-row">
+            <button type="button" class="contact-pick-btn contact-square" id="contact-pick-btn" onclick="pickContact()" aria-label="اختيار من جهات الاتصال">
+              <svg class="icon"><use href="#i-user"></use></svg>
+              <span>جهات الاتصال</span>
+            </button>
+            <div class="input-wrapper">
+              <input type="tel" id="input-phone" placeholder="05XXXXXXXX" inputmode="numeric" maxlength="10">
+              <span class="input-icon"><svg class="icon"><use href="#i-phone-call"></use></svg></span>
+            </div>
           </div>
         </div>
 
@@ -242,10 +223,28 @@
 
     <!-- ============ شاشة 3: سجل الحركات ============ -->
     <section class="view" id="history-view">
-      <div class="section-title" style="margin-top:0;">
-        كل الحركات
-        <span class="link" onclick="clearHistory()">مسح السجل</span>
+
+      <div class="hist-summary" id="hist-summary">
+        <div class="hist-summary-top">
+          <div><span class="hist-summary-label" id="hist-period-label">تحويلات الشهر الحالي</span><small class="hist-summary-sub" id="hist-period-sub"></small></div>
+          <div class="hist-summary-actions">
+            <button class="balance-icon-btn" id="hist-eye-btn" onclick="toggleHistoryHidden()" aria-label="إخفاء أو إظهار المبلغ">
+              <svg class="icon" id="hist-eye-icon"><use href="#i-eye"></use></svg>
+            </button>
+            <button class="balance-icon-btn" onclick="openHistoryOptions()" aria-label="خيارات السجل">
+              <svg class="icon"><use href="#i-settings"></use></svg>
+            </button>
+          </div>
+        </div>
+        <div class="hist-summary-amount"><span id="hist-total">0</span><span class="balance-currency">₪</span></div>
       </div>
+
+      <div class="hist-filter" id="hist-filter">
+        <button type="button" class="hist-filter-btn active" data-f="all" onclick="setHistoryFilter('all')">الكل</button>
+        <button type="button" class="hist-filter-btn" data-f="jawwal" onclick="setHistoryFilter('jawwal')"><i class="hist-dot jawwal"></i>جوال بي</button>
+        <button type="button" class="hist-filter-btn" data-f="palpay" onclick="setHistoryFilter('palpay')"><i class="hist-dot palpay"></i>بال بي</button>
+      </div>
+
       <div id="full-history-list"></div>
     </section>
 
@@ -504,6 +503,42 @@
   </div>
 </div>
 
+<!-- خيارات السجل: الشهر + المبلغ المعروض + مسح -->
+<div class="sheet-backdrop" id="hist-options-backdrop" style="display:none;" onclick="if(event.target===this) closeHistoryOptions()">
+  <div class="sheet-panel" style="max-height:88vh;overflow-y:auto;">
+    <div class="sheet-handle"></div>
+    <h3>خيارات السجل</h3>
+    <p class="sheet-desc" id="hist-options-count"></p>
+
+    <div class="hist-period-label">الشهر المعروض في البطاقة</div>
+    <div class="hist-month-grid" id="hist-month-grid"></div>
+
+    <div class="hist-period-label">مسح البيانات</div>
+    <div class="tx-actions-list">
+      <button class="tx-action-item tx-action-danger" onclick="clearHistoryScope('month')">
+        <span class="tx-action-icon"><svg class="icon"><use href="#i-trash-can"></use></svg></span>
+        <span><strong>مسح حركات الشهر المعروض</strong><small id="hist-clear-month-sub"></small></span>
+      </button>
+      <button class="tx-action-item tx-action-danger" onclick="clearHistoryScope('jawwal')">
+        <span class="tx-action-icon"><svg class="icon"><use href="#i-trash-can"></use></svg></span>
+        <span><strong>مسح حركات جوال بي</strong><small>كل عمليات جوال بي فقط</small></span>
+      </button>
+      <button class="tx-action-item tx-action-danger" onclick="clearHistoryScope('palpay')">
+        <span class="tx-action-icon"><svg class="icon"><use href="#i-trash-can"></use></svg></span>
+        <span><strong>مسح حركات بال بي</strong><small>كل عمليات بال بي فقط</small></span>
+      </button>
+      <button class="tx-action-item tx-action-danger" onclick="clearHistoryScope('all')">
+        <span class="tx-action-icon"><svg class="icon"><use href="#i-trash-can"></use></svg></span>
+        <span><strong>مسح كل السجل</strong><small>إزالة جميع العمليات نهائياً</small></span>
+      </button>
+    </div>
+
+    <div class="sheet-actions">
+      <button class="btn-secondary-flat" onclick="closeHistoryOptions()">إغلاق</button>
+    </div>
+  </div>
+</div>
+
 <!-- إجراءات عملية من السجل: حذف / إعادة -->
 <div class="sheet-backdrop" id="tx-actions-backdrop" style="display:none;" onclick="if(event.target===this) closeTxActions()">
   <div class="sheet-panel">
@@ -531,6 +566,30 @@
     <div class="sheet-actions">
       <button class="btn-secondary-flat" onclick="closeTxActions()">إغلاق</button>
     </div>
+  </div>
+</div>
+
+<!-- تأكيد التحويل (حوار في منتصف الشاشة) -->
+<div class="sheet-backdrop confirm-backdrop" id="confirm-transfer-backdrop" style="display:none;" onclick="if(event.target===this) closeConfirmTransfer()">
+  <div class="confirm-panel">
+    <h3>تأكيد التحويل</h3>
+    <p class="sheet-desc" id="confirm-transfer-text"></p>
+    <div class="confirm-details" id="confirm-transfer-details"></div>
+    <div class="sheet-actions">
+      <button class="create-new-btn" id="confirm-transfer-ok" onclick="confirmTransfer()">تأكيد التحويل</button>
+      <button class="btn-secondary-flat" onclick="closeConfirmTransfer()">إلغاء</button>
+    </div>
+  </div>
+</div>
+
+<!-- شاشة تنفيذ التحويل / نتيجته -->
+<div class="exec-screen" id="exec-screen" style="display:none;">
+  <div class="exec-card">
+    <div class="result-icon pending" id="exec-icon"><svg class="icon"><use href="#i-refresh"></use></svg></div>
+    <h3 id="exec-title">جاري تنفيذ التحويل</h3>
+    <p class="exec-sub" id="exec-sub"></p>
+    <div class="confirm-details" id="exec-details"></div>
+    <button class="create-new-btn" id="exec-done-btn" style="display:none;" onclick="closeExecScreen()">حسناً</button>
   </div>
 </div>
 

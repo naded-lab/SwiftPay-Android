@@ -85,10 +85,11 @@ mkdir -p "$ANDROID/app/src/main/res/values"
 cp "$ROOT/branding/ic_launcher_background.xml" "$ANDROID/app/src/main/res/values/ic_launcher_background.xml"
 
 
-echo "==> نسخ SecurePrefsPlugin..."
+echo "==> نسخ SecurePrefsPlugin وContactPickerPlugin..."
 cp "$ROOT/native-stage2/SecurePrefsPlugin.java" "$PKG_DIR/SecurePrefsPlugin.java"
+cp "$ROOT/native-stage2/ContactPickerPlugin.java" "$PKG_DIR/ContactPickerPlugin.java"
 
-echo "==> تسجيل SecurePrefsPlugin داخل MainActivity..."
+echo "==> تسجيل SecurePrefsPlugin وContactPickerPlugin داخل MainActivity..."
 python3 - "$ANDROID" "$MANIFEST" <<'PY3'
 from pathlib import Path
 import sys
@@ -118,6 +119,17 @@ if 'SecurePrefsPlugin' not in s:
         marker = 'registerPlugin(UssdPlugin::class.java)'
         if marker in s:
             s = s.replace(marker, marker + '\n        registerPlugin(SecurePrefsPlugin::class.java)', 1)
+    main.write_text(s)
+
+# ContactPickerPlugin (منفصل عن الشرط أعلاه كي يعمل حتى لو SecurePrefs مسجّل مسبقاً)
+s = main.read_text()
+if 'ContactPickerPlugin' not in s:
+    if main.suffix == '.java':
+        s = s.replace('import com.nadidstudio.swiftpay.UssdPlugin;', 'import com.nadidstudio.swiftpay.UssdPlugin;\nimport com.nadidstudio.swiftpay.ContactPickerPlugin;')
+        s = s.replace('registerPlugin(SecurePrefsPlugin.class);', 'registerPlugin(SecurePrefsPlugin.class);\n        registerPlugin(ContactPickerPlugin.class);', 1)
+    else:
+        s = s.replace('import com.nadidstudio.swiftpay.UssdPlugin', 'import com.nadidstudio.swiftpay.UssdPlugin\nimport com.nadidstudio.swiftpay.ContactPickerPlugin')
+        s = s.replace('registerPlugin(SecurePrefsPlugin::class.java)', 'registerPlugin(SecurePrefsPlugin::class.java)\n        registerPlugin(ContactPickerPlugin::class.java)', 1)
     main.write_text(s)
 PY3
 

@@ -14,7 +14,7 @@
 ```
 SwiftPay/
 ├── www/                    الواجهة الكاملة (HTML/CSS/JS) — مصدر الحقيقة الوحيد
-├── native-stage2/          إضافة USSD الأصلية (Kotlin) + سكربت التفعيل
+├── native-stage2/          إضافات أندرويد الأصلية (Java): USSD + التخزين الآمن + جهات الاتصال + سكربت التفعيل
 ├── branding/               مصدر الأيقونة وشاشة البداية (كل الكثافات)
 ├── capacitor.config.json   إعدادات Capacitor (appId, splash, ...)
 ├── package.json            اعتماديات Capacitor

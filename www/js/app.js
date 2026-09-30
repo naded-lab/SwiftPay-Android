@@ -6,7 +6,6 @@
 
 let currentService = 'jawwal';
 let currentType = 'friend';
-let currentStep = 1;
 
 // ---------- تخزين محلي دائم (يعمل بلا إنترنت، يبقى بعد إغلاق التطبيق) ----------
 const STORAGE_KEYS = {
@@ -150,29 +149,6 @@ async function hashPin(pin, salt) {
   return bufferToHex(digest);
 }
 
-const BALANCE_AUTO_REFRESH_KEY = 'swiftpay_balance_auto_refresh';
-
-function autoRefreshJawwalBalance() {
-  try {
-    const today = new Date().toISOString().slice(0, 10);
-    const state = loadFromStorage(BALANCE_AUTO_REFRESH_KEY, { date: today, count: 0 });
-
-    if (state.date !== today) {
-      state.date = today;
-      state.count = 0;
-    }
-
-    if (state.count >= 4) return;
-    if (!isNativeUssdAvailable() || !JAWWAL_BALANCE_USSD_CODE) return;
-
-    state.count++;
-    saveToStorage(BALANCE_AUTO_REFRESH_KEY, state);
-    refreshJawwalBalance();
-  } catch (e) {
-    console.error('SwiftPay: فشل التحديث التلقائي للرصيد', e);
-  }
-}
-
 // ---------- بدء التطبيق: يُحجب خلف شاشة القفل إن كانت مفعّلة ----------
 function initApp() {
   renderHistory();
@@ -180,6 +156,8 @@ function initApp() {
   applySettingsUI();
   renderBalanceCard();
   hideNativeSplashScreen();
+  // تحديث الرصيد الحقيقي عند دخول الرئيسية (لا يمنع عرض الواجهة ولا يفشل بصمت)
+  if (isNativeUssdAvailable() && JAWWAL_BALANCE_USSD_CODE) refreshJawwalBalance();
 }
 
 // نُخفي شاشة البداية الأصلية (شعار SwiftPay) بأنفسنا فور جهوزية أول شاشة فعلية،
@@ -435,23 +413,23 @@ function toggleSetting(key, checked) {
 }
 
 function handleBack() {
-  if (currentStep > 1) {
-    goToStep(currentStep - 1);
-  } else {
-    resetToHome();
-  }
+  if (transferBusy) return; // لا رجوع أثناء تنفيذ التحويل
+  resetToHome();
 }
 
 function startWizard(service) {
+  if (transferBusy) return;
+  selectedContact = null;
   document.querySelectorAll('.view').forEach(el => el.classList.remove('active-view'));
   document.getElementById('wizard-view').classList.add('active-view');
   document.getElementById('backBtn').style.visibility = 'visible';
-  document.getElementById('page-title').innerText = 'إنشاء كود تحويل';
+  document.getElementById('page-title').innerText = service === 'jawwal' ? 'تحويل جوال بي' : 'تحويل بال بي';
   selectService(service);
 }
 
 function selectService(service) {
   currentService = service;
+  applyServiceTheme(document.getElementById('wizard-view'), service);
   const banner = document.getElementById('selected-service-banner');
   const nameEl = document.getElementById('banner-service-name');
   const iconEl = document.getElementById('banner-service-icon');
@@ -465,8 +443,9 @@ function selectService(service) {
     iconEl.innerText = 'P';
     banner.className = 'selected-service-banner palpay-banner';
   }
+  banner.style.display = 'flex';
+  document.getElementById('wizard-step-2').style.display = 'block';
   updateTypeToggleUI();
-  goToStep(2);
 }
 
 // النوع (صديق/تاجر) صار مجرد تبديل داخل نفس شاشة البيانات، بدون الانتقال
@@ -494,19 +473,60 @@ function updateTypeToggleUI() {
   }
 }
 
-let transferSubmitting = false;
+let transferBusy = false;      // عملية تحويل جارية (تأكيد/تنفيذ/تحقق) — تمنع أي عملية ثانية
+let pendingTransfer = null;    // بيانات التحويل بانتظار تأكيد المستخدم
+let selectedContact = null;    // { name, phone } لجهة اتصال اختارها المستخدم
 
-// السجل هنا سجل تنفيذ فقط: نحفظ العملية، نطلق الاتصال، ونرجع فوراً للرئيسية.
-// لا يوجد أي انتظار أو تحقق من نتيجة الشبكة — لا حالة نجاح/فشل/معالجة إطلاقاً.
+const DIAL_GUARD_MS = 40000;   // سقف زمني في الواجهة حتى لو لم يردّ الـplugin
+const BALANCE_WAIT_MS = 5000;  // انتظار قصير بعد التحويل قبل قراءة الرصيد
+const BALANCE_RETRY_GAP_MS = 1500;
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function withTimeout(promise, ms) {
+  return Promise.race([promise, new Promise(r => setTimeout(() => r({ timedOut: true }), ms))]);
+}
+
+function escapeHtml(str) {
+  return String(str == null ? '' : str).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function setSubmitLocked(locked) {
+  const btn = document.getElementById('submit-transfer-btn');
+  if (!btn) return;
+  btn.disabled = locked;
+  btn.style.pointerEvents = locked ? 'none' : '';
+  btn.style.opacity = locked ? '0.6' : '';
+}
+
+function serviceLabel(service) { return service === 'jawwal' ? 'جوال بي' : 'بال بي'; }
+function typeLabel(type) { return type === 'friend' ? 'صديق' : 'تاجر'; }
+
+// اسم المستفيد: من جهة الاتصال المختارة (إن طابق رقمها)، أو من المفضلة، وإلا فارغ
+function resolveBeneficiaryName(phone) {
+  if (selectedContact && selectedContact.name && selectedContact.phone === phone) return selectedContact.name;
+  const fav = favoritesList.find(f => f.phone === phone);
+  return fav && fav.name ? fav.name : '';
+}
+
+function buildUssdCode(service, type, phone, amount, pin) {
+  if (service === 'jawwal') {
+    return type === 'friend' ? `*110*1*${pin}*${phone}*${amount}*1#` : `*110*2*${pin}*${phone}*${amount}*1#`;
+  }
+  return type === 'friend' ? `*370*1*1*${phone}*${amount}#` : `*370*2*${phone}*${amount}#`;
+}
+
+// الخطوة 1: تحقق من الحقول ثم اعرض حوار التأكيد (لا تنفيذ مباشر)
 function submitTransfer() {
-  if (transferSubmitting) return;
+  if (transferBusy) return;
 
   const phoneEl = document.getElementById('input-phone');
   const amountEl = document.getElementById('input-amount');
   const pinEl = document.getElementById('input-pin');
 
   const phone = phoneEl.value.trim();
-  const amount = amountEl.value.trim();
+  const amount = amountEl.value.trim().replace(',', '.');
   const pin = pinEl.value.trim();
   const pinRequired = document.getElementById('pin-group').style.display !== 'none';
 
@@ -534,57 +554,217 @@ function submitTransfer() {
     return;
   }
 
-  transferSubmitting = true;
-  const submitBtn = document.getElementById('submit-transfer-btn');
-  if (submitBtn) {
-    submitBtn.disabled = true;
-    submitBtn.style.pointerEvents = 'none';
-    submitBtn.style.opacity = '0.6';
-  }
-
-  let code = '';
-  if (currentService === 'jawwal') {
-    code = currentType === 'friend' ? `*110*1*${pin}*${phone}*${amount}*1#` : `*110*2*${pin}*${phone}*${amount}*1#`;
-  } else {
-    code = currentType === 'friend' ? `*370*1*1*${phone}*${amount}#` : `*370*2*${phone}*${amount}#`;
-  }
-
-  // نسخة مُخفاة للتخزين فقط: كود USSD الفعلي (jawwal) يحمل الرمز السري صراحة
-  // ضمن نصه، وكان يُحفظ كاملاً بسجل الحركات بشكل دائم — أي أن كل عملية كانت
-  // تُسرّب الرمز السري نصاً صريحاً بالتخزين المحلي إلى الأبد. tx.code غير
-  // مستخدَم بأي مكان بالواجهة أصلاً (لا عرض ولا نسخ)، فإخفاء الرمز هنا آمن
-  // تماماً ولا يفقد أي وظيفة ظاهرة للمستخدم.
-  const PIN_MASK = '****';
-  const codeForStorage = currentService === 'jawwal'
-    ? (currentType === 'friend'
-        ? `*110*1*${PIN_MASK}*${phone}*${amount}*1#`
-        : `*110*2*${PIN_MASK}*${phone}*${amount}*1#`)
-    : code;
-
-  const txId = (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2)));
-  transactionsList.unshift({
-    id: txId,
+  pendingTransfer = {
     service: currentService,
     type: currentType,
     phone: phone,
     amount: amount,
+    name: resolveBeneficiaryName(phone),
+    code: buildUssdCode(currentService, currentType, phone, amount, pin)
+  };
+  openConfirmTransfer(pendingTransfer);
+}
+
+function detailsRowsHtml(t) {
+  const rows = [];
+  if (t.name) rows.push(['المستفيد', escapeHtml(t.name)]);
+  rows.push(['الرقم', escapeHtml(t.phone)]);
+  rows.push(['المبلغ', escapeHtml(t.amount) + ' شيكل']);
+  rows.push(['نوع التحويل', serviceLabel(t.service) + ' - ' + typeLabel(t.type)]);
+  return rows.map(r => `<div class="confirm-row"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('');
+}
+
+function openConfirmTransfer(t) {
+  document.getElementById('confirm-transfer-text').innerText =
+    `هل أنت متأكد من تحويل ${t.amount} شيكل إلى الرقم ${t.phone}؟`;
+  document.getElementById('confirm-transfer-details').innerHTML = detailsRowsHtml(t);
+  document.getElementById('confirm-transfer-ok').disabled = false;
+  document.getElementById('confirm-transfer-backdrop').style.display = 'flex';
+}
+
+function closeConfirmTransfer() {
+  document.getElementById('confirm-transfer-backdrop').style.display = 'none';
+  pendingTransfer = null; // إلغاء: لا يُنفَّذ شيء
+}
+
+// الخطوة 2: تأكيد المستخدم
+function confirmTransfer() {
+  if (transferBusy || !pendingTransfer) return;
+  const t = pendingTransfer;
+  pendingTransfer = null;
+  transferBusy = true;
+  setSubmitLocked(true);
+  document.getElementById('confirm-transfer-ok').disabled = true;
+  document.getElementById('confirm-transfer-backdrop').style.display = 'none';
+
+  // التحقق الحقيقي بالرصيد متاح فقط لجوال بي داخل التطبيق الأصلي (له مصدر رصيد فعلي).
+  // بال بي (جلسة USSD تفاعلية بلا رد برمجي) ونسخة الويب/PWA لا يمكن التحقق منهما،
+  // فيبقيان على السلوك السابق: تنفيذ ثم تسجيل ثم رجوع للرئيسية.
+  const canVerify = t.service === 'jawwal' && isNativeUssdAvailable() && !!JAWWAL_BALANCE_USSD_CODE;
+  if (canVerify) {
+    runVerifiedTransfer(t);
+  } else {
+    addTransactionRecord(t);
+    callCode(t.code);
+    transferBusy = false;
+    setSubmitLocked(false);
+    resetToHome();
+  }
+}
+
+// كود USSD الفعلي (جوال بي) يحمل الرمز السري ضمن نصه؛ نخفيه دائماً قبل التخزين
+function addTransactionRecord(t) {
+  const PIN_MASK = '****';
+  const codeForStorage = t.service === 'jawwal'
+    ? (t.type === 'friend'
+        ? `*110*1*${PIN_MASK}*${t.phone}*${t.amount}*1#`
+        : `*110*2*${PIN_MASK}*${t.phone}*${t.amount}*1#`)
+    : t.code;
+  const txId = (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2)));
+  const rec = {
+    id: txId,
+    service: t.service,
+    type: t.type,
+    phone: t.phone,
+    amount: t.amount,
     timestamp: Date.now(),
     code: codeForStorage
-  });
+  };
+  if (t.name) rec.name = t.name;
+  transactionsList.unshift(rec);
   saveToStorage(STORAGE_KEYS.tx, transactionsList);
   renderHistory();
+}
 
-  callCode(code);
+// ---------- شاشة "جاري تنفيذ التحويل" والنتيجة ----------
+function showExecScreen(t) {
+  const icon = document.getElementById('exec-icon');
+  icon.className = 'result-icon pending';
+  icon.innerHTML = '<svg class="icon"><use href="#i-refresh"></use></svg>';
+  document.getElementById('exec-title').innerText = 'جاري تنفيذ التحويل';
+  document.getElementById('exec-sub').innerText = 'الرجاء الانتظار وعدم إغلاق التطبيق';
+  document.getElementById('exec-details').innerHTML = detailsRowsHtml(t);
+  document.getElementById('exec-done-btn').style.display = 'none';
+  document.getElementById('exec-screen').style.display = 'flex';
+}
 
-  // رجوع فوري للرئيسية: لا شاشة انتظار ولا تحقق من أي نتيجة — العملية سُجّلت
-  // بالسجل، وcallCode() تكمل عملها بالخلفية بغض النظر عن الشاشة المعروضة.
-  transferSubmitting = false;
-  if (submitBtn) {
-    submitBtn.disabled = false;
-    submitBtn.style.pointerEvents = '';
-    submitBtn.style.opacity = '';
+function finishExecScreen(ok, title, sub) {
+  const icon = document.getElementById('exec-icon');
+  icon.className = 'result-icon ' + (ok ? 'success' : 'failed');
+  icon.innerHTML = `<svg class="icon"><use href="#${ok ? 'i-check' : 'i-x'}"></use></svg>`;
+  document.getElementById('exec-title').innerText = title;
+  document.getElementById('exec-sub').innerText = sub || '';
+  document.getElementById('exec-done-btn').style.display = 'block';
+  document.getElementById('exec-done-btn').dataset.ok = ok ? '1' : '0';
+  transferBusy = false;
+  setSubmitLocked(false);
+}
+
+function closeExecScreen() {
+  const ok = document.getElementById('exec-done-btn').dataset.ok === '1';
+  document.getElementById('exec-screen').style.display = 'none';
+  if (ok) {
+    document.getElementById('input-phone').value = '';
+    document.getElementById('input-amount').value = '';
+    selectedContact = null;
   }
   resetToHome();
+}
+
+// ---------- تنفيذ التحويل مع التحقق الحقيقي بالرصيد ----------
+async function runVerifiedTransfer(t) {
+  showExecScreen(t);
+  const amount = Number(t.amount);
+  const fail = (title, sub) => finishExecScreen(false, title, sub);
+
+  try {
+    // لا نخلط جلستي USSD: انتظر أي تحديث رصيد جارٍ أولاً
+    if (balanceRefreshPromise) { try { await balanceRefreshPromise; } catch (e) { /* تجاهل */ } }
+
+    // الرصيد السابق: آخر قراءة حقيقية حديثة (دقيقتان)، وإلا نقرأه الآن قبل الإرسال
+    let before = recentBalanceNumber(120000);
+    if (before === null) {
+      const r = await fetchJawwalBalanceValue();
+      if (r.value === null) {
+        return fail('تعذر قراءة الرصيد', 'لم يتم تنفيذ أي تحويل. حاول مرة أخرى.');
+      }
+      storeBalanceReading(r);
+      before = r.value;
+    }
+
+    const dial = await withTimeout(Capacitor.Plugins.UssdDialer.dial({ code: t.code }), DIAL_GUARD_MS);
+    if (!(dial && dial.supported && dial.permissionGranted) && !(dial && dial.timedOut)) {
+      return fail('تعذر تنفيذ التحويل', 'لم يُرسَل الطلب. تأكد من منح صلاحية الاتصال ثم حاول مرة أخرى.');
+    }
+
+    await sleep(BALANCE_WAIT_MS);
+
+    // Refresh #1، وإن فشل Refresh #2 فقط — لا حلقات ولا انتظار مفتوح
+    let reading = await fetchJawwalBalanceValue();
+    if (reading.value === null) {
+      await sleep(BALANCE_RETRY_GAP_MS);
+      reading = await fetchJawwalBalanceValue();
+    }
+    if (reading.value === null) {
+      return fail('تعذر تحديث الرصيد', 'انتظر دقيقة ثم تحقق من الرصيد.');
+    }
+
+    // الرصيد الجديد يأتي من المصدر الحقيقي (لا خصم محلي أبداً)
+    storeBalanceReading(reading);
+
+    if (before - reading.value >= amount - 0.005) {
+      addTransactionRecord(t);
+      finishExecScreen(true, 'تم التحويل بنجاح', `${t.amount} شيكل إلى ${t.name || t.phone}`);
+    } else {
+      fail('فشل التحقق من التحويل', 'انتظر دقيقة ثم تحقق من الرصيد أو سجل العمليات.');
+    }
+  } catch (e) {
+    console.error('SwiftPay: خطأ أثناء تنفيذ التحويل', e);
+    fail('فشل التحويل', 'انتظر دقيقة ثم تحقق من الرصيد أو سجل العمليات.');
+  }
+}
+
+// ---------- اختيار المستفيد من جهات الاتصال ----------
+function normalizePalestinePhone(raw) {
+  let d = String(raw || '').replace(/\D/g, '');
+  // مقدّمة الدولة: +970 أو +972 (أو 00970 / 00972) تُستبدل بصفر واحد
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.length > 10 && (d.startsWith('970') || d.startsWith('972'))) d = d.slice(3);
+  // إزالة أي أصفار زائدة (مثل 972-0599...) ثم إضافة صفر واحد فقط
+  d = d.replace(/^0+/, '');
+  return d ? '0' + d : '';
+}
+
+function applyPickedContact(name, rawPhone) {
+  const phoneEl = document.getElementById('input-phone');
+  const phone = normalizePalestinePhone(rawPhone);
+  clearFieldError(phoneEl);
+  if (!/^0\d{8,9}$/.test(phone)) {
+    showFieldError(phoneEl, 'رقم جهة الاتصال المختارة غير صالح');
+    return;
+  }
+  phoneEl.value = phone;
+  selectedContact = { name: (name || '').trim(), phone: phone };
+}
+
+async function pickContact() {
+  const phoneEl = document.getElementById('input-phone');
+  try {
+    if (window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() &&
+        Capacitor.Plugins && Capacitor.Plugins.ContactPicker) {
+      const r = await Capacitor.Plugins.ContactPicker.pick();
+      if (r && !r.cancelled && r.phone) applyPickedContact(r.name, r.phone);
+    } else if (navigator.contacts && navigator.contacts.select) {
+      const res = await navigator.contacts.select(['name', 'tel'], { multiple: false });
+      if (res && res.length && res[0].tel && res[0].tel[0]) {
+        applyPickedContact(res[0].name && res[0].name[0], res[0].tel[0]);
+      }
+    } else {
+      showFieldError(phoneEl, 'اختيار جهة الاتصال غير متاح على هذا الجهاز');
+    }
+  } catch (e) {
+    showFieldError(phoneEl, 'تعذر فتح جهات الاتصال');
+  }
 }
 
 function showFieldError(inputEl, message) {
@@ -602,37 +782,6 @@ function clearFieldError(inputEl) {
   inputEl.closest('.input-wrapper').classList.remove('input-wrapper-error');
   const err = inputEl.closest('.input-group').querySelector('.field-error');
   if (err) err.remove();
-}
-
-function goToStep(step) {
-  currentStep = step;
-  // مغادرة شاشة النتيجة (٣) دون تأكيد نهائي كانت تُبقي transferSubmitting=true
-  // للأبد، فيتعطّل زر "تحويل" بصمت بالمحاولة التالية (يظهر عالقاً كأنه لا
-  // يستجيب). أي عودة لخطوة الخدمة/البيانات تعني بداية محاولة جديدة فعلياً.
-  if (step < 3) transferSubmitting = false;
-  document.querySelectorAll('.wizard-step').forEach(el => el.style.display = 'none');
-  document.getElementById(`wizard-step-${step}`).style.display = 'block';
-
-  const banner = document.getElementById('selected-service-banner');
-  banner.style.display = step >= 2 ? 'flex' : 'none';
-
-  // المُعالج البصري (stepper) صار خطوتين فقط: الخدمة، والتحويل. شاشة النتيجة
-  // (step 3) لا تُمثَّل كخطوة يملأها المستخدم، فنُبقي المؤشر على "التحويل" مكتمل.
-  const indicatorStep = Math.min(step, 2);
-  for (let i = 1; i <= 2; i++) {
-    const indicator = document.getElementById(`step-${i}-ind`);
-    indicator.classList.remove('active', 'completed');
-    if (i < indicatorStep || step >= 3) {
-      indicator.classList.add('completed');
-      indicator.querySelector('.step-circle').innerHTML = '<svg class="icon"><use href="#i-check"></use></svg>';
-    } else if (i === indicatorStep) {
-      indicator.classList.add('active');
-      indicator.querySelector('.step-circle').innerText = i;
-    } else {
-      indicator.querySelector('.step-circle').innerText = i;
-    }
-  }
-  document.getElementById('backBtn').style.visibility = 'visible';
 }
 
 function copyTextRobust(text) {
@@ -794,8 +943,54 @@ function setBalanceMeta(message, isError) {
   metaEl.classList.toggle('error', !!isError);
 }
 
-async function refreshJawwalBalance() {
+// قراءة الرصيد الحقيقي من الشبكة دون أي تعديل على الواجهة أو الحالة.
+// تعيد { value: number|null, text, reason }.
+async function fetchJawwalBalanceValue() {
+  if (!JAWWAL_BALANCE_USSD_CODE || !isNativeUssdAvailable()) return { value: null, reason: 'unavailable' };
+  try {
+    const result = await withTimeout(
+      Capacitor.Plugins.UssdDialer.dial({ code: JAWWAL_BALANCE_USSD_CODE }), DIAL_GUARD_MS);
+    if (result && result.supported && result.permissionGranted && typeof result.response === 'string') {
+      const text = extractBalanceFromResponse(result.response);
+      if (text !== null) return { value: parseFloat(text), text: text, reason: 'ok' };
+      return { value: null, reason: 'parse' };
+    }
+    if (result && result.timedOut) return { value: null, reason: 'timeout' };
+    if (result && !result.permissionGranted) return { value: null, reason: 'permission' };
+    return { value: null, reason: 'failed' };
+  } catch (e) {
+    return { value: null, reason: 'error' };
+  }
+}
+
+function storeBalanceReading(reading) {
+  balanceState.amount = reading.text;
+  balanceState.updatedAt = Date.now();
+  saveToStorage(BALANCE_STORAGE_KEY, balanceState);
+  setBalanceMeta('', false);
+  renderBalanceCard();
+}
+
+// آخر قراءة حقيقية إن كانت أحدث من maxAgeMs، وإلا null
+function recentBalanceNumber(maxAgeMs) {
+  if (balanceState.amount === null || !balanceState.updatedAt) return null;
+  if (Date.now() - balanceState.updatedAt > maxAgeMs) return null;
+  const n = parseFloat(balanceState.amount);
+  return isNaN(n) ? null : n;
+}
+
+let balanceRefreshPromise = null;
+
+function refreshJawwalBalance() {
+  if (balanceRefreshPromise) return balanceRefreshPromise;
+  const done = () => { balanceRefreshPromise = null; };
+  balanceRefreshPromise = doRefreshJawwalBalance().then(done, done);
+  return balanceRefreshPromise;
+}
+
+async function doRefreshJawwalBalance() {
   const btn = document.getElementById('balance-refresh-btn');
+  const card = document.getElementById('jawwal-balance-card');
 
   if (!JAWWAL_BALANCE_USSD_CODE) {
     setBalanceMeta('كود فحص الرصيد غير مُعدّ بعد بالتطبيق', true);
@@ -807,31 +1002,25 @@ async function refreshJawwalBalance() {
   }
 
   if (btn) btn.classList.add('spinning');
+  if (card) card.classList.add('refreshing'); // القيمة القديمة لا تظهر كأنها محدّثة
   setBalanceMeta('جاري التحديث...', false);
 
   try {
-    const result = await Capacitor.Plugins.UssdDialer.dial({ code: JAWWAL_BALANCE_USSD_CODE });
-
-    if (result && result.supported && result.permissionGranted && typeof result.response === 'string') {
-      const amount = extractBalanceFromResponse(result.response);
-      if (amount !== null) {
-        balanceState.amount = amount;
-        balanceState.updatedAt = Date.now();
-        saveToStorage(BALANCE_STORAGE_KEY, balanceState);
-      } else {
-        setBalanceMeta('تعذّر قراءة الرصيد من رد الشبكة', true);
-      }
-    } else if (result && result.timedOut) {
+    const r = await fetchJawwalBalanceValue();
+    if (r.value !== null) {
+      storeBalanceReading(r);
+    } else if (r.reason === 'parse') {
+      setBalanceMeta('تعذّر قراءة الرصيد من رد الشبكة', true);
+    } else if (r.reason === 'timeout') {
       setBalanceMeta('لم يصل رد من الشبكة خلال الوقت المتوقع، حاول لاحقاً', true);
-    } else if (result && !result.permissionGranted) {
+    } else if (r.reason === 'permission') {
       setBalanceMeta('لازم توافق على صلاحية الاتصال لعرض الرصيد', true);
     } else {
       setBalanceMeta('تعذّر تنفيذ الطلب، حاول مرة أخرى', true);
     }
-  } catch (e) {
-    setBalanceMeta('حصل خطأ أثناء التحديث', true);
   } finally {
     if (btn) btn.classList.remove('spinning');
+    if (card) card.classList.remove('refreshing');
     renderBalanceCard();
   }
 }
@@ -851,7 +1040,6 @@ function switchTab(tabName) {
   document.getElementById(`${tabName}-view`).classList.add('active-view');
   document.querySelector(`.nav-item:nth-child(${indices[tabName]})`).classList.add('active');
   document.getElementById('backBtn').style.visibility = tabName === 'home' ? 'hidden' : 'visible';
-  currentStep = 1;
 }
 
 function txCardInner(tx) {
@@ -862,7 +1050,7 @@ function txCardInner(tx) {
     <div class="tx-right">
       <div class="tx-icon ${tx.service}">${iconChar}</div>
       <div class="tx-details">
-        <h4>${sName} - ${tName}</h4>
+        <h4>${sName} - ${escapeHtml(tx.name || tName)}</h4>
         <p>${tx.phone}</p>
       </div>
     </div>
@@ -889,7 +1077,7 @@ function homePreviewCard(tx) {
     <div class="transaction-card">
       <div class="tx-right">
         <div class="tx-icon ${tx.service}">${iconChar}</div>
-        <div class="tx-details"><h4>${sName} - ${tName}</h4><p>${tx.phone}</p></div>
+        <div class="tx-details"><h4>${sName} - ${escapeHtml(tx.name || tName)}</h4><p>${tx.phone}</p></div>
       </div>
       <div class="tx-left">
         <div class="tx-amount">${tx.amount} شيكل</div>
@@ -914,9 +1102,143 @@ function dayGroupLabel(ts) {
   return `${d.getDate()} ${ARABIC_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+// ---------- سجل الحركات: تفضيلات العرض (إخفاء المبلغ، فترة البطاقة، فلتر الخدمة) ----------
+const HISTORY_PREFS_KEY = 'swiftpay_history_prefs';
+let historyPrefs = Object.assign({ hidden: false, period: 0 }, loadFromStorage(HISTORY_PREFS_KEY, {}));
+let historyFilter = 'all'; // 'all' | 'jawwal' | 'palpay' — يؤثر على القائمة فقط
+
+function formatMoney(n) {
+  return (Math.round(n * 100) / 100).toLocaleString('en-US');
+}
+
+// period: 0 = هذا الشهر، 1 = الشهر الماضي — تُحسب من timestamp حقيقي لكل عملية
+function txInPeriod(tx, period) {
+  const now = new Date();
+  const ref = new Date(now.getFullYear(), now.getMonth() - period, 1);
+  const d = new Date(tx.timestamp);
+  return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth();
+}
+
+function computeHistoryStats(period) {
+  const st = { total: 0, jawwal: 0, palpay: 0, count: 0 };
+  transactionsList.forEach(tx => {
+    if (!txInPeriod(tx, period)) return;
+    const a = parseFloat(tx.amount);
+    if (isNaN(a)) return;
+    st.total += a;
+    st.count++;
+    if (tx.service === 'jawwal') st.jawwal += a; else st.palpay += a;
+  });
+  return st;
+}
+
+function saveHistoryPrefs() { saveToStorage(HISTORY_PREFS_KEY, historyPrefs); }
+
+// ---------- Service theme: مصدر واحد لألوان الخدمة ----------
+// كل مفتاح يشير إلى متغيرات CSS الجاهزة (تتبدّل تلقائياً بين الليلي والنهاري).
+// applyServiceTheme يضبط --svc* على العنصر، وكل الواجهة تقرأ منها فقط.
+const SERVICE_THEMES = {
+  all:    { accent: '--primary', bg: '--primary-bg', border: '--primary-border', grad: '--gradient-primary', shadow: '--primary-shadow', on: '--on-primary' },
+  jawwal: { accent: '--jawwal',  bg: '--jawwal-bg',  border: '--jawwal-border',  grad: '--jawwal-grad',      shadow: '--jawwal-shadow',  on: '--on-jawwal' },
+  palpay: { accent: '--palpay',  bg: '--palpay-bg',  border: '--palpay-border',  grad: '--palpay-grad',      shadow: '--palpay-shadow',  on: '--on-palpay' }
+};
+
+function applyServiceTheme(el, key) {
+  const t = SERVICE_THEMES[key] || SERVICE_THEMES.all;
+  if (!el) return;
+  el.dataset.service = key;
+  el.style.setProperty('--svc', `var(${t.accent})`);
+  el.style.setProperty('--svc-bg', `var(${t.bg})`);
+  el.style.setProperty('--svc-border', `var(${t.border})`);
+  el.style.setProperty('--svc-grad', `var(${t.grad})`);
+  el.style.setProperty('--svc-shadow', `var(${t.shadow})`);
+  el.style.setProperty('--svc-on', `var(${t.on})`);
+}
+
+const HISTORY_PERIODS = 13; // هذا الشهر ... قبل سنة
+
+function periodName(p) {
+  if (p === 0) return 'الشهر الحالي';
+  if (p === 1) return 'الشهر السابق';
+  if (p === 2) return 'قبل شهرين';
+  if (p === 12) return 'قبل سنة';
+  if (p <= 10) return 'قبل ' + p + ' أشهر';
+  return 'قبل ' + p + ' شهراً';
+}
+
+function periodMonthText(p) {
+  const ref = new Date(new Date().getFullYear(), new Date().getMonth() - p, 1);
+  return ARABIC_MONTHS[ref.getMonth()] + ' ' + ref.getFullYear();
+}
+
+const METRIC_LABELS = { all: '', jawwal: 'جوال بي', palpay: 'بال بي' };
+
+function renderHistorySummary() {
+  const totalEl = document.getElementById('hist-total');
+  if (!totalEl) return;
+  const st = computeHistoryStats(historyPrefs.period);
+  const hide = historyPrefs.hidden;
+  const m = historyFilter;
+  applyServiceTheme(document.getElementById('hist-summary'), m);
+  const value = m === 'jawwal' ? st.jawwal : m === 'palpay' ? st.palpay : st.total;
+  totalEl.innerText = hide ? '••••' : formatMoney(value);
+  document.getElementById('hist-period-label').innerText =
+    'تحويلات ' + (m === 'all' ? '' : METRIC_LABELS[m] + ' - ') + periodName(historyPrefs.period);
+  document.getElementById('hist-period-sub').innerText = periodMonthText(historyPrefs.period);
+  document.getElementById('hist-eye-icon').querySelector('use').setAttribute('href', hide ? '#i-eye-off' : '#i-eye');
+  document.getElementById('hist-options-count').innerText = st.count + ' عمليات في ' + periodMonthText(historyPrefs.period);
+  const cm = document.getElementById('hist-clear-month-sub');
+  if (cm) cm.innerText = periodName(historyPrefs.period) + ' (' + periodMonthText(historyPrefs.period) + ')';
+
+  const grid = document.getElementById('hist-month-grid');
+  if (grid) {
+    if (!grid.children.length) {
+      let g = '';
+      for (let p = 0; p < HISTORY_PERIODS; p++) {
+        g += `<button type="button" class="hist-filter-btn" data-p="${p}" onclick="setHistoryPeriod(${p})">${periodName(p)}<small>${periodMonthText(p)}</small></button>`;
+      }
+      grid.innerHTML = g;
+    }
+    grid.querySelectorAll('.hist-filter-btn').forEach(b => {
+      b.classList.toggle('active', Number(b.dataset.p) === historyPrefs.period);
+    });
+  }
+  document.querySelectorAll('#hist-filter .hist-filter-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.f === historyFilter);
+  });
+}
+
+function toggleHistoryHidden() {
+  historyPrefs.hidden = !historyPrefs.hidden;
+  saveHistoryPrefs();
+  renderHistorySummary();
+}
+
+function setHistoryPeriod(p) {
+  historyPrefs.period = p;
+  saveHistoryPrefs();
+  renderHistorySummary();
+}
+
+function setHistoryFilter(f) {
+  historyFilter = f;
+  renderHistory();
+}
+
+function openHistoryOptions() {
+  renderHistorySummary();
+  document.getElementById('hist-options-backdrop').style.display = 'flex';
+}
+
+function closeHistoryOptions() {
+  document.getElementById('hist-options-backdrop').style.display = 'none';
+}
+
 function renderHistory() {
   const fullContainer = document.getElementById('full-history-list');
   const homeContainer = document.getElementById('home-recent-list');
+
+  renderHistorySummary();
 
   if (transactionsList.length === 0) {
     fullContainer.innerHTML = '<div class="empty-state">لا توجد عمليات مسجلة حتى الآن</div>';
@@ -924,11 +1246,15 @@ function renderHistory() {
     return;
   }
 
+  const filtered = historyFilter === 'all'
+    ? transactionsList
+    : transactionsList.filter(tx => tx.service === historyFilter);
+
   // القائمة مرتّبة الأحدث أولاً أساساً (unshift عند كل عملية جديدة)، لذا التجميع
   // بمسح تسلسلي بسيط وفتح تجميعة جديدة كلما تغيّر مفتاح اليوم يعطي ترتيباً صحيحاً.
   let html = '';
   let lastKey = null;
-  transactionsList.forEach(tx => {
+  filtered.forEach(tx => {
     const key = dayGroupKey(tx.timestamp);
     if (key !== lastKey) {
       html += `<div class="history-day-header">${dayGroupLabel(tx.timestamp)}</div>`;
@@ -936,7 +1262,7 @@ function renderHistory() {
     }
     html += historyCard(tx);
   });
-  fullContainer.innerHTML = html;
+  fullContainer.innerHTML = html || '<div class="empty-state">لا توجد عمليات لهذه الخدمة</div>';
 
   homeContainer.innerHTML = transactionsList.slice(0, 3).map(homePreviewCard).join('');
 }
@@ -977,16 +1303,30 @@ function repeatTransactionFromActions() {
     selectTransferType(tx.type);
     document.getElementById('input-phone').value = tx.phone;
     document.getElementById('input-amount').value = tx.amount;
+    if (tx.name) selectedContact = { name: tx.name, phone: tx.phone };
   }, 100);
 }
 
-function clearHistory() {
-  if (confirm('هل أنت متأكد من مسح جميع سجل الحركات؟')) {
-    transactionsList = [];
+function clearHistoryScope(scope) {
+  const inScope = tx => {
+    if (scope === 'all') return true;
+    if (scope === 'month') return txInPeriod(tx, historyPrefs.period);
+    return tx.service === scope;
+  };
+  const n = transactionsList.filter(inScope).length;
+  if (n === 0) { alert('لا توجد عمليات لمسحها'); return; }
+  const what = scope === 'all' ? 'كل السجل'
+    : scope === 'month' ? 'حركات ' + periodName(historyPrefs.period) + ' (' + periodMonthText(historyPrefs.period) + ')'
+    : 'حركات ' + METRIC_LABELS[scope];
+  if (confirm('سيتم مسح ' + what + ' (' + n + ' عملية). هل أنت متأكد؟')) {
+    transactionsList = transactionsList.filter(tx => !inScope(tx));
     saveToStorage(STORAGE_KEYS.tx, transactionsList);
     renderHistory();
+    closeHistoryOptions();
   }
 }
+
+function clearHistory() { clearHistoryScope('all'); }
 
 function showAddFavoriteModal() { document.getElementById('add-favorite-modal').style.display = 'block'; }
 function hideAddFavoriteModal() {

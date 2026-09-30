@@ -25,7 +25,7 @@
     box.id = 'swiftpay-fallback-screen';
     box.setAttribute('dir', 'rtl');
     box.style.cssText =
-      'position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;' +
+      'position:fixed;top:0;right:0;bottom:0;left:0;inset:0;z-index:99999;display:flex;flex-direction:column;' +
       'align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;' +
       'background:#080D1A;color:#E8EDF7;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;';
 

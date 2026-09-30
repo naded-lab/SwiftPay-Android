@@ -214,5 +214,6 @@ function swiftpayDismissInstallBanner() {
 document.addEventListener('DOMContentLoaded', () => {
   swiftpayRefreshInstallUI();
   // متابعة أي تغيّر لاحق في وضع العرض (مثال: تثبيت من نافذة أخرى)
-  window.matchMedia('(display-mode: standalone)').addEventListener?.('change', swiftpayRefreshInstallUI);
+  var swiftpayMq = window.matchMedia('(display-mode: standalone)');
+  if (swiftpayMq && swiftpayMq.addEventListener) swiftpayMq.addEventListener('change', swiftpayRefreshInstallUI);
 });
