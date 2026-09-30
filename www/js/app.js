@@ -1123,7 +1123,7 @@ function dayGroupLabel(ts) {
 
 // ---------- سجل الحركات: تفضيلات العرض (إخفاء المبلغ، فترة البطاقة، فلتر الخدمة) ----------
 const HISTORY_PREFS_KEY = 'swiftpay_history_prefs';
-let historyPrefs = Object.assign({ hidden: false, period: 0 }, loadFromStorage(HISTORY_PREFS_KEY, {}));
+let historyPrefs = Object.assign({ hidden: false, period: 0, mode: 'month', from: '', to: '' }, loadFromStorage(HISTORY_PREFS_KEY, {}));
 let historyFilter = 'all'; // 'all' | 'jawwal' | 'palpay' — يؤثر على القائمة فقط
 
 function formatMoney(n) {
@@ -1138,10 +1138,40 @@ function txInPeriod(tx, period) {
   return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth();
 }
 
+// ---------- الفترة المعروضة: شهر جاهز (mode='month') أو نطاق تواريخ مخصص (mode='range') ----------
+function pad2(n) { return String(n).padStart(2, '0'); }
+function toDateInputValue(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+function parseDateInput(v, endOfDay) {
+  const parts = String(v || '').split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return null;
+  return endOfDay ? new Date(parts[0], parts[1] - 1, parts[2], 23, 59, 59, 999)
+                  : new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+}
+function formatDateAr(v) {
+  const d = parseDateInput(v, false);
+  return d ? d.getDate() + ' ' + ARABIC_MONTHS[d.getMonth()] + ' ' + d.getFullYear() : '';
+}
+function isRangeMode() { return historyPrefs.mode === 'range' && !!historyPrefs.from && !!historyPrefs.to; }
+function txInView(tx) {
+  if (isRangeMode()) {
+    const f = parseDateInput(historyPrefs.from, false).getTime();
+    const t = parseDateInput(historyPrefs.to, true).getTime();
+    const ts = new Date(tx.timestamp).getTime();
+    return ts >= f && ts <= t;
+  }
+  return txInPeriod(tx, historyPrefs.period);
+}
+function viewPeriodName() { return isRangeMode() ? 'نطاق مخصص' : periodName(historyPrefs.period); }
+function viewPeriodText() {
+  return isRangeMode()
+    ? formatDateAr(historyPrefs.from) + ' - ' + formatDateAr(historyPrefs.to)
+    : periodMonthText(historyPrefs.period);
+}
+
 function computeHistoryStats(period) {
   const st = { total: 0, jawwal: 0, palpay: 0, count: 0 };
   transactionsList.forEach(tx => {
-    if (!txInPeriod(tx, period)) return;
+    if (!txInView(tx)) return;
     const a = parseFloat(tx.amount);
     if (isNaN(a)) return;
     st.total += a;
@@ -1202,25 +1232,36 @@ function renderHistorySummary() {
   const value = m === 'jawwal' ? st.jawwal : m === 'palpay' ? st.palpay : st.total;
   totalEl.innerText = hide ? '••••' : formatMoney(value);
   document.getElementById('hist-period-label').innerText =
-    'تحويلات ' + (m === 'all' ? '' : METRIC_LABELS[m] + ' - ') + periodName(historyPrefs.period);
-  document.getElementById('hist-period-sub').innerText = periodMonthText(historyPrefs.period);
+    'تحويلات ' + (m === 'all' ? '' : METRIC_LABELS[m] + ' - ') + viewPeriodName();
+  document.getElementById('hist-period-sub').innerText = viewPeriodText();
   document.getElementById('hist-eye-icon').querySelector('use').setAttribute('href', hide ? '#i-eye-off' : '#i-eye');
-  document.getElementById('hist-options-count').innerText = st.count + ' عمليات في ' + periodMonthText(historyPrefs.period);
+  document.getElementById('hist-options-count').innerText = viewPeriodText();
+  const badge = document.getElementById('hist-options-badge');
+  if (badge) badge.innerText = st.count + ' عملية';
   const cm = document.getElementById('hist-clear-month-sub');
-  if (cm) cm.innerText = periodName(historyPrefs.period) + ' (' + periodMonthText(historyPrefs.period) + ')';
+  if (cm) cm.innerText = viewPeriodName() + ' (' + st.count + ' عملية)';
 
   const grid = document.getElementById('hist-month-grid');
   if (grid) {
     if (!grid.children.length) {
-      let g = '';
+      let g = `<button type="button" class="hist-chip" data-p="custom" onclick="setHistoryCustomRange()"><span class="hist-chip-two">نطاق<br>مخصص</span></button>`;
       for (let p = 0; p < HISTORY_PERIODS; p++) {
-        g += `<button type="button" class="hist-filter-btn" data-p="${p}" onclick="setHistoryPeriod(${p})">${periodName(p)}<small>${periodMonthText(p)}</small></button>`;
+        g += `<button type="button" class="hist-chip" data-p="${p}" onclick="setHistoryPeriod(${p})">${periodName(p)}<small>${periodMonthText(p)}</small></button>`;
       }
       grid.innerHTML = g;
     }
-    grid.querySelectorAll('.hist-filter-btn').forEach(b => {
-      b.classList.toggle('active', Number(b.dataset.p) === historyPrefs.period);
+    grid.querySelectorAll('.hist-chip').forEach(b => {
+      const on = historyPrefs.mode === 'range' ? b.dataset.p === 'custom' : Number(b.dataset.p) === historyPrefs.period && b.dataset.p !== 'custom';
+      b.classList.toggle('active', on);
     });
+  }
+  const rangeCard = document.getElementById('hist-range-card');
+  if (rangeCard) {
+    rangeCard.style.display = historyPrefs.mode === 'range' ? 'block' : 'none';
+    const fi = document.getElementById('hist-range-from');
+    const ti = document.getElementById('hist-range-to');
+    if (fi && fi.value !== historyPrefs.from) fi.value = historyPrefs.from;
+    if (ti && ti.value !== historyPrefs.to) ti.value = historyPrefs.to;
   }
   document.querySelectorAll('#hist-filter .hist-filter-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.f === historyFilter);
@@ -1234,9 +1275,44 @@ function toggleHistoryHidden() {
 }
 
 function setHistoryPeriod(p) {
+  historyPrefs.mode = 'month';
   historyPrefs.period = p;
   saveHistoryPrefs();
   renderHistorySummary();
+}
+
+// نطاق مخصص: أول مرة يبدأ من أول الشهر الحالي حتى اليوم
+function setHistoryCustomRange() {
+  historyPrefs.mode = 'range';
+  if (!historyPrefs.from || !historyPrefs.to) {
+    const now = new Date();
+    historyPrefs.from = toDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
+    historyPrefs.to = toDateInputValue(now);
+  }
+  saveHistoryPrefs();
+  renderHistorySummary();
+}
+
+function onHistoryRangeChange() {
+  const from = document.getElementById('hist-range-from').value;
+  const to = document.getElementById('hist-range-to').value;
+  const err = document.getElementById('hist-range-error');
+  if (from && to && from > to) {
+    err.innerText = 'تاريخ البداية يجب أن يسبق تاريخ النهاية';
+    err.style.display = 'block';
+    return;
+  }
+  err.style.display = 'none';
+  if (from) historyPrefs.from = from;
+  if (to) historyPrefs.to = to;
+  saveHistoryPrefs();
+  renderHistorySummary();
+}
+
+// تبديل شاشة النافذة: الرئيسية أو مسح البيانات
+function showHistoryOptView(view) {
+  document.getElementById('hist-opt-main').style.display = view === 'main' ? 'block' : 'none';
+  document.getElementById('hist-opt-delete').style.display = view === 'delete' ? 'block' : 'none';
 }
 
 function setHistoryFilter(f) {
@@ -1245,6 +1321,7 @@ function setHistoryFilter(f) {
 }
 
 function openHistoryOptions() {
+  showHistoryOptView('main');
   renderHistorySummary();
   document.getElementById('hist-options-backdrop').style.display = 'flex';
 }
@@ -1305,10 +1382,12 @@ function closeTxActions() {
 
 function deleteTransactionFromActions() {
   if (!txActionsTargetId) return;
+  const removed = transactionsList.filter(t => String(t.id) === String(txActionsTargetId));
   transactionsList = transactionsList.filter(t => String(t.id) !== String(txActionsTargetId));
   saveToStorage(STORAGE_KEYS.tx, transactionsList);
   renderHistory();
   closeTxActions();
+  showUndoSnackbar(removed);
 }
 
 // إعادة الحركة: تفتح المعالج مباشرة مع تعبئة نفس الرقم والمبلغ (والخدمة/النوع) دون طلب
@@ -1329,19 +1408,112 @@ function repeatTransactionFromActions() {
 function clearHistoryScope(scope) {
   const inScope = tx => {
     if (scope === 'all') return true;
-    if (scope === 'month') return txInPeriod(tx, historyPrefs.period);
+    if (scope === 'view' || scope === 'month') return txInView(tx);
     return tx.service === scope;
   };
   const n = transactionsList.filter(inScope).length;
   if (n === 0) { alert('لا توجد عمليات لمسحها'); return; }
   const what = scope === 'all' ? 'كل السجل'
-    : scope === 'month' ? 'حركات ' + periodName(historyPrefs.period) + ' (' + periodMonthText(historyPrefs.period) + ')'
+    : (scope === 'view' || scope === 'month') ? 'حركات ' + viewPeriodName() + ' (' + viewPeriodText() + ')'
     : 'حركات ' + METRIC_LABELS[scope];
   if (confirm('سيتم مسح ' + what + ' (' + n + ' عملية). هل أنت متأكد؟')) {
+    const removed = transactionsList.filter(inScope);
     transactionsList = transactionsList.filter(tx => !inScope(tx));
     saveToStorage(STORAGE_KEYS.tx, transactionsList);
     renderHistory();
     closeHistoryOptions();
+    showUndoSnackbar(removed);
+  }
+}
+
+// ---------- التراجع بعد الحذف (5 ثوانٍ) ----------
+const UNDO_MS = 5000;
+let undoState = null;
+let undoTimer = null;
+
+function showUndoSnackbar(removed) {
+  if (!removed || !removed.length) return;
+  undoState = removed;
+  const bar = document.getElementById('undo-snackbar');
+  document.getElementById('undo-snackbar-text').innerText = 'تم حذف ' + removed.length + ' عملية';
+  bar.classList.remove('show');
+  void bar.offsetWidth; // إعادة تشغيل حركة العدّاد
+  bar.style.display = 'flex';
+  bar.classList.add('show');
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(hideUndoSnackbar, UNDO_MS);
+}
+
+function hideUndoSnackbar() {
+  clearTimeout(undoTimer);
+  const bar = document.getElementById('undo-snackbar');
+  bar.classList.remove('show');
+  bar.style.display = 'none';
+  undoState = null;
+}
+
+function undoDelete() {
+  if (!undoState) return;
+  const restored = undoState;
+  hideUndoSnackbar();
+  transactionsList = transactionsList.concat(restored)
+    .sort((x, y) => new Date(y.timestamp) - new Date(x.timestamp));
+  saveToStorage(STORAGE_KEYS.tx, transactionsList);
+  renderHistory();
+}
+
+// ---------- تصدير الحركات المعروضة (CSV يفتح في Excel) ----------
+function csvCell(v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }
+
+function buildHistoryCsv(rows) {
+  const head = ['التاريخ', 'الوقت', 'الخدمة', 'النوع', 'الاسم', 'الرقم', 'المبلغ (شيكل)'];
+  const lines = [head.map(csvCell).join(',')];
+  rows.forEach(tx => {
+    const d = new Date(tx.timestamp);
+    lines.push([
+      d.getFullYear() + '/' + pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()),
+      pad2(d.getHours()) + ':' + pad2(d.getMinutes()),
+      tx.service === 'jawwal' ? 'جوال بي' : 'بال بي',
+      tx.type === 'friend' ? 'صديق' : 'تاجر',
+      tx.name || '',
+      '="' + (tx.phone || '') + '"',
+      tx.amount
+    ].map(csvCell).join(','));
+  });
+  return '\uFEFF' + lines.join('\r\n');
+}
+
+async function exportHistory() {
+  const rows = transactionsList
+    .filter(tx => txInView(tx) && (historyFilter === 'all' || tx.service === historyFilter))
+    .sort((x, y) => new Date(x.timestamp) - new Date(y.timestamp));
+  if (!rows.length) { alert('لا توجد عمليات في الفترة المعروضة'); return; }
+  const csv = buildHistoryCsv(rows);
+  const stamp = isRangeMode() ? historyPrefs.from + '_' + historyPrefs.to : toDateInputValue(new Date());
+  const fileName = 'swiftpay-' + stamp + '.csv';
+  try {
+    const file = new File([csv], fileName, { type: 'text/csv' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'سجل SwiftPay' });
+      return;
+    }
+    if (navigator.share) {
+      await navigator.share({ title: 'سجل SwiftPay', text: csv });
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+  }
+  try {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch (e) {
+    try { await navigator.clipboard.writeText(csv); alert('تعذّر إنشاء الملف، تم نسخ البيانات إلى الحافظة'); }
+    catch (e2) { alert('تعذّر تصدير الملف على هذا الجهاز'); }
   }
 }
 

@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#F8FAFC">
+<meta name="color-scheme" content="light dark">
 <meta name="description" content="SwiftPay — إنشاء أكواد USSD لتحويلات جوال بي وبال بي بسرعة وأمان، ويعمل بالكامل دون إنترنت.">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -46,6 +47,7 @@
   <symbol id="i-code" viewBox="0 0 24 24"><path d="m16 8 4 4-4 4M8 8l-4 4 4 4"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
   <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
+  <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2V2Z"/><path d="M9 7h6M9 11h6"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
   <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
@@ -503,40 +505,77 @@
   </div>
 </div>
 
-<!-- خيارات السجل: الشهر + المبلغ المعروض + مسح -->
+<!-- خيارات السجل: الفترة (شهر أو نطاق مخصص) + تصدير + مسح -->
 <div class="sheet-backdrop" id="hist-options-backdrop" style="display:none;" onclick="if(event.target===this) closeHistoryOptions()">
-  <div class="sheet-panel" style="max-height:88vh;overflow-y:auto;">
+  <div class="sheet-panel hist-sheet">
     <div class="sheet-handle"></div>
-    <h3>خيارات السجل</h3>
-    <p class="sheet-desc" id="hist-options-count"></p>
 
-    <div class="hist-period-label">الشهر المعروض في البطاقة</div>
-    <div class="hist-month-grid" id="hist-month-grid"></div>
+    <div id="hist-opt-main">
+      <div class="hist-sheet-head">
+        <div>
+          <h3>خيارات السجل</h3>
+          <p class="sheet-desc" id="hist-options-count"></p>
+        </div>
+        <div class="hist-head-side">
+          <span class="hist-count-badge"><svg class="icon"><use href="#i-receipt"></use></svg><b id="hist-options-badge">0 عملية</b></span>
+        </div>
+      </div>
 
-    <div class="hist-period-label">مسح البيانات</div>
-    <div class="tx-actions-list">
-      <button class="tx-action-item tx-action-danger" onclick="clearHistoryScope('month')">
-        <span class="tx-action-icon"><svg class="icon"><use href="#i-trash-can"></use></svg></span>
-        <span><strong>مسح حركات الشهر المعروض</strong><small id="hist-clear-month-sub"></small></span>
-      </button>
-      <button class="tx-action-item tx-action-danger" onclick="clearHistoryScope('jawwal')">
-        <span class="tx-action-icon"><svg class="icon"><use href="#i-trash-can"></use></svg></span>
-        <span><strong>مسح حركات جوال بي</strong><small>كل عمليات جوال بي فقط</small></span>
-      </button>
-      <button class="tx-action-item tx-action-danger" onclick="clearHistoryScope('palpay')">
-        <span class="tx-action-icon"><svg class="icon"><use href="#i-trash-can"></use></svg></span>
-        <span><strong>مسح حركات بال بي</strong><small>كل عمليات بال بي فقط</small></span>
-      </button>
-      <button class="tx-action-item tx-action-danger" onclick="clearHistoryScope('all')">
-        <span class="tx-action-icon"><svg class="icon"><use href="#i-trash-can"></use></svg></span>
-        <span><strong>مسح كل السجل</strong><small>إزالة جميع العمليات نهائياً</small></span>
-      </button>
+      <div class="hist-period-label">الفترة المعروضة</div>
+      <div class="hist-chips" id="hist-month-grid"></div>
+
+      <div class="hist-range-card" id="hist-range-card" style="display:none;">
+        <div class="hist-range-row">
+          <label><span>من</span><input type="date" id="hist-range-from" onchange="onHistoryRangeChange()"></label>
+          <svg class="icon hist-range-arrow"><use href="#i-arrow-left-chevron"></use></svg>
+          <label><span>إلى</span><input type="date" id="hist-range-to" onchange="onHistoryRangeChange()"></label>
+        </div>
+        <div class="hist-range-error" id="hist-range-error" style="display:none;"></div>
+      </div>
+
+      <div class="tx-actions-list">
+        <button type="button" class="tx-action-item" onclick="exportHistory()">
+          <span class="tx-action-icon"><svg class="icon"><use href="#i-download"></use></svg></span>
+          <span><strong>تصدير الحركات</strong><small>ملف Excel للفترة المعروضة</small></span>
+        </button>
+        <button type="button" class="tx-action-item tx-action-danger" onclick="showHistoryOptView('delete')">
+          <span class="tx-action-icon"><svg class="icon"><use href="#i-trash-can"></use></svg></span>
+          <span><strong>مسح البيانات</strong><small>حذف حركات الفترة أو الخدمة أو السجل</small></span>
+        </button>
+      </div>
     </div>
 
-    <div class="sheet-actions">
-      <button class="btn-secondary-flat" onclick="closeHistoryOptions()">إغلاق</button>
+    <div id="hist-opt-delete" style="display:none;">
+      <div class="hist-sheet-head hist-sheet-head-back">
+        <button type="button" class="hist-close-btn" onclick="showHistoryOptView('main')" aria-label="رجوع"><svg class="icon"><use href="#i-arrow-right"></use></svg></button>
+        <h3>مسح البيانات</h3>
+      </div>
+      <div class="tx-actions-list">
+        <button type="button" class="tx-action-item tx-action-danger" onclick="clearHistoryScope('view')">
+          <span class="tx-action-icon"><svg class="icon"><use href="#i-trash-can"></use></svg></span>
+          <span><strong>مسح حركات الفترة المعروضة</strong><small id="hist-clear-month-sub"></small></span>
+        </button>
+        <button type="button" class="tx-action-item tx-action-danger" onclick="clearHistoryScope('jawwal')">
+          <span class="tx-action-icon"><svg class="icon"><use href="#i-trash-can"></use></svg></span>
+          <span><strong>مسح حركات جوال بي</strong><small>كل عمليات جوال بي فقط</small></span>
+        </button>
+        <button type="button" class="tx-action-item tx-action-danger" onclick="clearHistoryScope('palpay')">
+          <span class="tx-action-icon"><svg class="icon"><use href="#i-trash-can"></use></svg></span>
+          <span><strong>مسح حركات بال بي</strong><small>كل عمليات بال بي فقط</small></span>
+        </button>
+        <button type="button" class="tx-action-item tx-action-danger" onclick="clearHistoryScope('all')">
+          <span class="tx-action-icon"><svg class="icon"><use href="#i-trash-can"></use></svg></span>
+          <span><strong>مسح كل السجل</strong><small>إزالة جميع العمليات نهائياً</small></span>
+        </button>
+      </div>
     </div>
   </div>
+</div>
+
+<!-- شريط التراجع بعد الحذف -->
+<div class="undo-snackbar" id="undo-snackbar" role="status" aria-live="polite">
+  <span id="undo-snackbar-text"></span>
+  <button type="button" onclick="undoDelete()">تراجع</button>
 </div>
 
 <!-- إجراءات عملية من السجل: حذف / إعادة -->

@@ -29,6 +29,7 @@ function swiftpayWriteSettings(settings) {
   const settings = swiftpayReadSettings();
   const isDark = settings.darkMode === true;
   document.documentElement.classList.toggle('light-theme', !isDark);
+  document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
   // نُبقي وسم meta الخاص بلون الثيم متزامناً مع الوضع الحالي (لشريط حالة الأندرويد)
   const themeColor = isDark ? '#080D1A' : '#F8FAFC';
   const metaTag = document.querySelector('meta[name="theme-color"]');
@@ -52,6 +53,7 @@ function swiftpaySetTheme(isDarkMode) {
   settings.darkMode = isDarkMode;
   swiftpayWriteSettings(settings);
   document.body.classList.toggle('light-theme', !isDarkMode);
+  document.documentElement.style.colorScheme = isDarkMode ? 'dark' : 'light';
   const themeColor = isDarkMode ? '#080D1A' : '#F8FAFC';
   const metaTag = document.querySelector('meta[name="theme-color"]');
   if (metaTag) metaTag.setAttribute('content', themeColor);

@@ -1164,3 +1164,89 @@ body.light-theme {
 .hist-month-grid .hist-filter-btn small { font-size: 0.66rem; color: var(--text-muted); font-weight: 500; }
 .hist-month-grid .hist-filter-btn.active { background: var(--primary-bg); color: var(--primary); border-color: var(--primary-border); }
 .hist-month-grid .hist-filter-btn.active small { color: var(--primary); }
+
+
+/* ---------- خيارات السجل: تصميم جديد (فترة + نطاق + تصدير + تراجع) ---------- */
+.hist-sheet { max-height: 88vh; overflow-y: auto; }
+.hist-sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.hist-sheet-head h3 { margin-bottom: 2px; }
+.hist-sheet-head .sheet-desc { margin-bottom: 0; }
+.hist-sheet-head-back { justify-content: flex-start; align-items: center; }
+.hist-sheet-head-back h3 { margin: 0; }
+.hist-close-btn {
+  flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%;
+  background: var(--bg-card); border: 1px solid var(--border-card); color: var(--text-secondary);
+  display: flex; align-items: center; justify-content: center;
+}
+.hist-chips {
+  display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 8px; margin-bottom: 8px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.hist-chips::-webkit-scrollbar { display: none; }
+.hist-chip {
+  flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 16px; border-radius: 20px;
+  background: var(--bg-card); color: var(--text-secondary);
+  border: 1px solid var(--border-card); font-size: 0.8rem; font-weight: 700; white-space: nowrap;
+}
+.hist-chip small { font-size: 0.64rem; color: var(--text-muted); font-weight: 500; }
+.hist-chip.active { background: var(--primary-bg); color: var(--primary); border-color: var(--primary-border); }
+.hist-chip.active small { color: var(--primary); }
+.hist-range-card {
+  background: var(--bg-card); border: 1px solid var(--border-card);
+  border-radius: var(--radius-md); padding: 12px; margin-bottom: 14px;
+}
+.hist-range-row { display: flex; align-items: flex-end; gap: 8px; }
+.hist-range-row label { flex: 1; min-width: 0; display: block; }
+.hist-range-row label span { display: block; font-size: 0.68rem; color: var(--text-secondary); margin-bottom: 4px; }
+.hist-range-row input[type="date"] {
+  width: 100%; height: 42px; padding: 0 10px;
+  background: var(--bg-main); border: 1px solid var(--border-card); border-radius: var(--radius-sm);
+  color: var(--text-primary); font: inherit; font-size: 0.82rem; font-weight: 700;
+  color-scheme: dark;
+}
+body.light-theme .hist-range-row input[type="date"] { color-scheme: light; }
+.hist-range-arrow { flex-shrink: 0; color: var(--text-muted); margin-bottom: 11px; }
+.hist-range-error { color: var(--danger); font-size: 0.72rem; font-weight: 600; margin-top: 8px; }
+
+.undo-snackbar {
+  display: none; position: fixed; z-index: 70;
+  right: 16px; left: 16px; max-width: 448px; margin: 0 auto;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  align-items: center; gap: 12px; overflow: hidden;
+  background: var(--text-primary); color: var(--bg-main);
+  border-radius: 14px; padding: 13px 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.undo-snackbar > span { flex: 1; font-size: 0.84rem; font-weight: 700; }
+.undo-snackbar > button {
+  background: transparent; color: inherit; border: 1px solid currentColor;
+  border-radius: 8px; padding: 5px 14px; font-weight: 800; font-size: 0.82rem;
+}
+.undo-snackbar.show { animation: undoIn .25s ease both; }
+.undo-snackbar.show::after {
+  content: ''; position: absolute; bottom: 0; right: 0; left: 0; height: 3px;
+  background: var(--primary); transform-origin: right center;
+  animation: undoBar 5s linear forwards;
+}
+@keyframes undoIn { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes undoBar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+.hist-head-side { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.hist-count-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--primary-bg); color: var(--primary); border: 1px solid var(--primary-border);
+  border-radius: 20px; padding: 6px 12px; font-size: 0.78rem;
+}
+.hist-count-badge b { font-weight: 800; }
+.hist-count-badge .icon { width: 15px; height: 15px; }
+
+/* يعلن للـ WebView أن الصفحة تدير مظهرها بنفسها، فلا يفرض التعتيم التلقائي للنظام */
+@media (prefers-color-scheme: dark) { html { color-scheme: dark; } }
+@media (prefers-color-scheme: light) { html { color-scheme: light; } }
+
+.hist-export-title { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 0.86rem; }
+.hist-export-title .icon { color: var(--primary); }
+.hist-export-btn { margin-top: 12px; width: 100%; }
+
+.hist-chip-two { display: block; text-align: center; line-height: 1.35; }
