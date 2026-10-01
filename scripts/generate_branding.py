@@ -105,15 +105,9 @@ def main():
         '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
         '    <color name="ic_launcher_background">#1E6BFF</color>\n</resources>\n')
 
-    # ---------- شاشة البداية: خلفية بيضاء + الشعار ----------
-    for d in SPL.glob("*"):
-        p = d / "splash.png"
-        if not p.exists():
-            continue
-        w, h = Image.open(p).size
-        side = int(min(w, h) * 0.34)
-        bg = Image.new("RGBA", (w, h), (255, 255, 255, 255))
-        paste_center(bg, scaled(master, side)).convert("RGB").save(p)
+    # ---------- شاشة البداية: اللوغو فقط (الخلفية البيضاء والتموضع في drawable/splash.xml عبر install-stage2.sh) ----------
+    SPL.mkdir(parents=True, exist_ok=True)
+    scaled(master, 512).save(SPL / "splash_logo.png", optimize=True)
 
     # ---------- أيقونات الويب / PWA ----------
     scaled(master, 512).save(ICONS / "icon-512.png")

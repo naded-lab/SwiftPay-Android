@@ -1354,3 +1354,8 @@ body.light-theme .hist-range-row input[type="date"] { color-scheme: light; }
 .app-title.brand-text { font-weight: 700; letter-spacing: -0.5px; }
 .app-header.is-home .app-title.brand-text { font-size: 1.65rem; }
 .applock-title.brand-text { font-weight: 700; }
+
+/* هيدر أنحف (ارتفاع أقل) */
+.app-header { padding: calc(4px + var(--safe-top)) 18px 6px; }
+.app-header .icon-btn { width: 36px; height: 36px; }
+.app-header.is-home .app-title.brand-text { font-size: 1.5rem; }

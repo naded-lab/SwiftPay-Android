@@ -75,12 +75,34 @@ for d in "$ROOT"/branding/mipmap-source/mipmap-*; do
   cp "$d"/*.png "$ANDROID/app/src/main/res/$name/" 2>/dev/null || true
   cp "$d"/*.xml "$ANDROID/app/src/main/res/$name/" 2>/dev/null || true
 done
-for d in "$ROOT"/branding/splash-source/*; do
-  [ -f "$d/splash.png" ] || continue
-  name="$(basename "$d")"
-  mkdir -p "$ANDROID/app/src/main/res/$name"
-  cp "$d/splash.png" "$ANDROID/app/src/main/res/$name/splash.png"
-done
+# شاشة البداية: لا نستخدم صورة ممطوطة بحجم الشاشة (كانت تشوّه اللوغو على الشاشات الطويلة)،
+# بل drawable من نوع layer-list: خلفية بيضاء + اللوغو بحجم ثابت مربّع في المنتصف.
+RES="$ANDROID/app/src/main/res"
+find "$RES" -type f \( -name 'splash.png' -o -name 'splash.webp' -o -name 'splash.jpg' -o -name 'splash.xml' \) -delete 2>/dev/null || true
+# أيقونات قديمة متبقية من قالب Capacitor قد تتعارض مع الأيقونات الجديدة
+find "$RES" -type f \( -name 'ic_launcher*.webp' \) -delete 2>/dev/null || true
+rm -f "$RES/drawable-v24/ic_launcher_foreground.xml" "$RES/drawable/ic_launcher_background.xml"
+mkdir -p "$RES/drawable-nodpi" "$RES/drawable"
+cp "$ROOT/branding/splash-source/splash_logo.png" "$RES/drawable-nodpi/splash_logo.png"
+cat > "$RES/drawable/splash.xml" <<'XMLEOF'
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#FFFFFF" />
+        </shape>
+    </item>
+    <item android:width="150dp" android:height="150dp" android:gravity="center">
+        <bitmap android:src="@drawable/splash_logo" android:gravity="fill" />
+    </item>
+</layer-list>
+XMLEOF
+cat > "$RES/drawable/splash_icon.xml" <<'XMLEOF'
+<?xml version="1.0" encoding="utf-8"?>
+<inset xmlns:android="http://schemas.android.com/apk/res/android" android:inset="20%">
+    <bitmap android:src="@drawable/splash_logo" android:gravity="fill" />
+</inset>
+XMLEOF
 mkdir -p "$ANDROID/app/src/main/res/values"
 cp "$ROOT/branding/ic_launcher_background.xml" "$ANDROID/app/src/main/res/values/ic_launcher_background.xml"
 
@@ -189,7 +211,8 @@ if styles.exists():
     t = styles.read_text(encoding="utf-8")
     m = re.search(r'(<style name="AppTheme\.NoActionBarLaunch"[^>]*>)(.*?)(</style>)', t, re.S)
     if m and 'windowSplashScreenBackground' not in m.group(2):
-        item = '\n        <item name="windowSplashScreenBackground">#FFFFFF</item>\n    '
+        item = ('\n        <item name="windowSplashScreenBackground">#FFFFFF</item>'
+                '\n        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>\n    ')
         t = t[:m.end(2)] + item + t[m.end(2):]
         styles.write_text(t, encoding="utf-8")
 PY5
