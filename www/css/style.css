@@ -716,7 +716,7 @@ a { text-decoration: none; color: inherit; }
   box-shadow: var(--shadow-card);
 }
 .app-hero-top { display: flex; align-items: center; gap: 12px; position: relative; z-index: 1; }
-.app-hero-logo { width: 52px; height: 52px; border-radius: 16px; }
+.app-hero-logo { width: 56px; height: 56px; flex-shrink: 0; object-fit: contain; }
 .app-hero-text h3 { font-size: 1rem; font-weight: 800; display: flex; align-items: center; gap: 8px; }
 .ver-badge { font-size: 0.62rem; background: var(--primary-bg); color: var(--primary); padding: 2px 8px; border-radius: var(--radius-pill); font-weight: 700; }
 .app-hero-text p { font-size: 0.76rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.6; }
@@ -850,12 +850,15 @@ body.keyboard-open .content-area { padding-bottom: 18px; }
 #applock-screen.visible { display: flex; opacity: 1; }
 #applock-screen.leaving { opacity: 0; }
 
-.applock-logo { width: 64px; height: 64px; border-radius: 18px; margin-bottom: 18px; }
-.applock-title { font-size: 1.05rem; font-weight: 800; margin-bottom: 4px; }
-.applock-subtitle { font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 26px; transition: color .2s ease; }
+.applock-logo { width: 76px; height: 76px; margin-bottom: 10px; object-fit: contain; }
+.applock-title { font-size: 2rem; font-weight: 900; letter-spacing: 0.3px; line-height: 1.2; margin-bottom: 6px; padding: 2px 0; }
+.applock-subline { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 28px; font-size: 0.8rem; }
+.applock-locked { color: var(--text-primary); font-weight: 800; }
+.applock-sep { color: var(--text-secondary); opacity: .6; font-size: .7rem; }
+.applock-subtitle { color: var(--text-secondary); transition: color .2s ease; }
 .applock-subtitle.error { color: var(--danger); }
 
-.applock-dots { display: flex; gap: 16px; margin-bottom: 34px; }
+.applock-dots { display: flex; gap: 14px; margin-bottom: 30px; }
 .applock-dots span {
   width: 14px; height: 14px; border-radius: 50%;
   border: 2px solid var(--border-card-strong);
@@ -872,27 +875,29 @@ body.keyboard-open .content-area { padding-bottom: 18px; }
 
 .applock-keypad {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 18px;
-  width: 100%;
-  max-width: 280px;
+  grid-template-columns: repeat(3, 66px);
+  justify-content: center;
+  gap: 14px 24px;
+  direction: rtl;
 }
 .applock-key {
-  width: 100%;
-  aspect-ratio: 1;
+  width: 66px; height: 66px;
   border-radius: 50%;
   border: 1px solid var(--border-card);
   background: var(--bg-card);
   color: var(--text-primary);
-  font-size: 1.2rem;
-  font-weight: 700;
+  font-size: 1.4rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
   display: flex; align-items: center; justify-content: center;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
   transition: background-color .12s ease, transform .08s ease;
 }
 .applock-key:active { transform: scale(0.92); background: var(--primary-bg); }
-.applock-key.applock-empty { background: transparent; border: none; }
-.applock-key.applock-delete { font-size: 1.3rem; }
+.applock-key.applock-empty { background: transparent; border: none; box-shadow: none; pointer-events: none; }
+.applock-key.applock-delete { font-size: 1.25rem; background: transparent; border-color: transparent; box-shadow: none; }
 
 /* ---------------------- 18) بطاقة تثبيت التطبيق (Install) ---------------------- */
 .install-banner {
@@ -1250,3 +1255,102 @@ body.light-theme .hist-range-row input[type="date"] { color-scheme: light; }
 .hist-export-btn { margin-top: 12px; width: 100%; }
 
 .hist-chip-two { display: block; text-align: center; line-height: 1.35; }
+
+/* اسم SwiftPay بلون التطبيق: أخضر متدرّج إلى أزرق */
+.brand-text {
+  background: linear-gradient(90deg, #12C99A 0%, #1E6BFF 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+.app-title:not(.brand-text) { background: none; -webkit-text-fill-color: currentColor; }
+/* عنوان SwiftPay في الهيدر: أكبر ومتناسق مع حجم الشاشة */
+.app-title.brand-text {
+  font-size: 1.6rem;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+  line-height: 1.2;
+  padding: 2px 0;
+}
+
+/* ===================== الشاشة الرئيسية — واجهة احترافية (بدون مس البطاقات) ===================== */
+.app-title-wrap { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.app-title-logo { display: none; width: 34px; height: 34px; object-fit: contain; }
+.app-header.is-home .app-title.brand-text { font-size: 1.5rem; }
+
+/* هيدر بتدرّج خفيف بألوان التطبيق ينزل بنعومة إلى الصفحة */
+.app-header.is-home {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, #12C99A 16%, var(--bg-main)) 0%,
+    color-mix(in srgb, #1E6BFF 7%, var(--bg-main)) 100%);
+  border-bottom-color: transparent;
+}
+
+/* عناوين الأقسام في الرئيسية: خط ملوّن صغير + زر "عرض الكل" */
+#home-view .section-title {
+  position: relative;
+  padding-inline-start: 12px;
+  margin: 26px 0 12px;
+  font-size: 0.98rem;
+  font-weight: 800;
+}
+#home-view .section-title::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: 50%;
+  width: 4px; height: 18px;
+  transform: translateY(-50%);
+  border-radius: 4px;
+  background: linear-gradient(180deg, #12C99A, #1E6BFF);
+}
+#home-view .section-title .link {
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--secondary) 12%, transparent);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+/* شريط تنقل عائم */
+.bottom-nav {
+  bottom: calc(10px + var(--safe-bottom));
+  width: calc(100% - 28px);
+  max-width: 452px;
+  padding: 7px 8px;
+  border: 1px solid var(--border-card);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--bg-card) 94%, transparent);
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.06);
+}
+.nav-item.active .nav-icon-wrap { background: linear-gradient(135deg, #12C99A, #1E6BFF); }
+.nav-item.active { color: #fff; }
+.content-area { padding-bottom: calc(112px + var(--safe-bottom)); }
+
+/* لوغو الهيدر على يسار الاسم */
+.app-title-wrap { direction: ltr; }
+
+/* أسماء التبويبات تحت الأيقونات */
+.nav-item { flex-direction: column; gap: 3px; padding: 6px 4px 4px; }
+.nav-icon-wrap { width: 52px; height: 30px; border-radius: 12px; }
+.nav-item .icon { font-size: 1.25rem; }
+.nav-label { font-size: 0.68rem; font-weight: 700; line-height: 1; color: var(--text-muted); transition: color .2s ease; }
+.nav-item.active { color: var(--text-muted); }
+.nav-item.active .icon { color: #fff; }
+.nav-item.active .nav-label {
+  background: linear-gradient(90deg, #12C99A, #1E6BFF);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+.content-area { padding-bottom: calc(122px + var(--safe-bottom)); }
+
+/* خط الشعار (Poppins Bold، مضمَّن محلياً ليعمل بدون إنترنت) */
+@font-face {
+  font-family: 'SwiftBrand';
+  src: url('../assets/fonts/poppins-bold-brand.woff') format('woff');
+  font-weight: 700;
+  font-display: swap;
+}
+.brand-text { font-family: 'SwiftBrand', 'Poppins', 'Segoe UI', Arial, sans-serif; font-weight: 700; letter-spacing: -0.4px; }
+.app-title.brand-text { font-weight: 700; letter-spacing: -0.5px; }
+.app-header.is-home .app-title.brand-text { font-size: 1.65rem; }
+.applock-title.brand-text { font-weight: 700; }

@@ -6,22 +6,19 @@
 
 ## البنية (بعد التوحيد على Capacitor)
 
-مصدر الحقيقة الوحيد للتطبيق هو **نسخة الويب/Capacitor**. كان هناك سابقاً
-مشروع Android أصلي (Java/XML بدون WebView) طُوِّر بالتوازي؛ تقرر أرشفته
-(وليس حذفه) لصالح توحيد الصيانة على مصدر واحد — التفاصيل والأسباب في
-[`docs/archive/native-app-archived/README.md`](docs/archive/native-app-archived/README.md).
+مصدر الحقيقة الوحيد للتطبيق هو **نسخة الويب/Capacitor**.
 
 ```
 SwiftPay/
 ├── www/                    الواجهة الكاملة (HTML/CSS/JS) — مصدر الحقيقة الوحيد
 ├── native-stage2/          إضافات أندرويد الأصلية (Java): USSD + التخزين الآمن + جهات الاتصال + سكربت التفعيل
 ├── branding/               مصدر الأيقونة وشاشة البداية (كل الكثافات)
+├── scripts/                generate_branding.py (يولّد الأيقونات) + إعداد التوقيع
 ├── capacitor.config.json   إعدادات Capacitor (appId, splash, ...)
 ├── package.json            اعتماديات Capacitor
 ├── setup.sh                إعداد المشروع محلياً (يولّد android/ تلقائياً)
 ├── docs/
-│   ├── ARCHITECTURE.md     تفاصيل نسخة الويب/Capacitor
-│   └── archive/            توثيق تاريخي، بما فيه نسخة Native المؤرشفة كاملة
+│   └── ARCHITECTURE.md     تفاصيل نسخة الويب/Capacitor
 └── .github/workflows/build-apk.yml   سير البناء (GitHub Actions)
 ```
 
@@ -43,4 +40,3 @@ cd android && ./gradlew assembleDebug
 ## توثيق إضافي
 
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — تفاصيل النسخة الحالية بالكامل
-- [`docs/archive/`](docs/archive/) — توثيق تاريخي من مراحل الدمج السابقة، بما فيها نسخة Native الكاملة (لغرض المرجعية فقط)

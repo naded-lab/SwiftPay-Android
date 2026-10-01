@@ -423,7 +423,7 @@ function startWizard(service) {
   document.querySelectorAll('.view').forEach(el => el.classList.remove('active-view'));
   document.getElementById('wizard-view').classList.add('active-view');
   document.getElementById('backBtn').style.visibility = 'visible';
-  document.getElementById('page-title').innerText = service === 'jawwal' ? 'تحويل جوال بي' : 'تحويل بال بي';
+  setPageTitle(service === 'jawwal' ? 'تحويل جوال بي' : 'تحويل بال بي');
   selectService(service);
 }
 
@@ -1053,7 +1053,7 @@ function switchTab(tabName) {
   document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
 
   const titles = { 'home': 'SwiftPay', 'history': 'سجل الحركات', 'favorites': 'المفضلة', 'settings': 'الإعدادات' };
-  document.getElementById('page-title').innerText = titles[tabName] || 'SwiftPay';
+  setPageTitle(titles[tabName] || 'SwiftPay');
 
   const indices = { 'home': 1, 'history': 2, 'favorites': 3, 'settings': 4 };
   document.getElementById(`${tabName}-view`).classList.add('active-view');
@@ -1139,6 +1139,14 @@ function txInPeriod(tx, period) {
 }
 
 // ---------- الفترة المعروضة: شهر جاهز (mode='month') أو نطاق تواريخ مخصص (mode='range') ----------
+function setPageTitle(text) {
+  const el = document.getElementById('page-title');
+  if (!el) return;
+  el.innerText = text;
+  el.classList.toggle('brand-text', text === 'SwiftPay');
+  const hd = document.getElementById('app-header');
+  if (hd) hd.classList.toggle('is-home', text === 'SwiftPay');
+}
 function pad2(n) { return String(n).padStart(2, '0'); }
 function toDateInputValue(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
 function parseDateInput(v, endOfDay) {
@@ -1462,43 +1470,175 @@ function undoDelete() {
   renderHistory();
 }
 
-// ---------- تصدير الحركات المعروضة (CSV يفتح في Excel) ----------
-function csvCell(v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }
+// ---------- تصدير الحركات المعروضة (ملف Excel حقيقي .xlsx) ----------
+// نبني ملف xlsx بنفسنا (ZIP بدون ضغط) كي لا نعتمد على أي مكتبة خارجية، ويعمل offline.
+const XLSX_CRC_TABLE = (function () {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
 
-function buildHistoryCsv(rows) {
+function xlsxCrc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = XLSX_CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+function xlsxZip(files) {
+  const enc = new TextEncoder();
+  const chunks = [];
+  const central = [];
+  let offset = 0;
+  const u16 = (v) => [v & 255, (v >>> 8) & 255];
+  const u32 = (v) => [v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255];
+  files.forEach(f => {
+    const name = enc.encode(f.name);
+    const data = enc.encode(f.data);
+    const crc = xlsxCrc32(data);
+    const head = new Uint8Array([
+      0x50, 0x4B, 0x03, 0x04, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21),
+      ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(name.length), ...u16(0)
+    ]);
+    chunks.push(head, name, data);
+    central.push({ name, crc, size: data.length, offset });
+    offset += head.length + name.length + data.length;
+  });
+  const cdStart = offset;
+  central.forEach(c => {
+    const rec = new Uint8Array([
+      0x50, 0x4B, 0x01, 0x02, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21),
+      ...u32(c.crc), ...u32(c.size), ...u32(c.size), ...u16(c.name.length), ...u16(0), ...u16(0),
+      ...u16(0), ...u16(0), ...u32(0), ...u32(c.offset)
+    ]);
+    chunks.push(rec, c.name);
+    offset += rec.length + c.name.length;
+  });
+  const cdSize = offset - cdStart;
+  chunks.push(new Uint8Array([
+    0x50, 0x4B, 0x05, 0x06, ...u16(0), ...u16(0), ...u16(central.length), ...u16(central.length),
+    ...u32(cdSize), ...u32(cdStart), ...u16(0)
+  ]));
+  let total = 0;
+  chunks.forEach(c => { total += c.length; });
+  const out = new Uint8Array(total);
+  let pos = 0;
+  chunks.forEach(c => { out.set(c, pos); pos += c.length; });
+  return out;
+}
+
+function xlsxEsc(v) {
+  return String(v == null ? '' : v)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function xlsxColName(i) { return String.fromCharCode(65 + i); }
+
+function buildHistoryXlsx(rows) {
   const head = ['التاريخ', 'الوقت', 'الخدمة', 'النوع', 'الاسم', 'الرقم', 'المبلغ (شيكل)'];
-  const lines = [head.map(csvCell).join(',')];
-  rows.forEach(tx => {
+  const widths = [13, 9, 11, 9, 22, 16, 15];
+  const strCell = (ref, v, style) =>
+    '<c r="' + ref + '" t="inlineStr"' + (style ? ' s="' + style + '"' : '') + '><is><t xml:space="preserve">' + xlsxEsc(v) + '</t></is></c>';
+  let sheetRows = '<row r="1">' + head.map((h, i) => strCell(xlsxColName(i) + '1', h, 1)).join('') + '</row>';
+  let total = 0;
+  rows.forEach((tx, idx) => {
+    const r = idx + 2;
     const d = new Date(tx.timestamp);
-    lines.push([
+    const amount = Number(tx.amount) || 0;
+    total += amount;
+    const vals = [
       d.getFullYear() + '/' + pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()),
       pad2(d.getHours()) + ':' + pad2(d.getMinutes()),
       tx.service === 'jawwal' ? 'جوال بي' : 'بال بي',
       tx.type === 'friend' ? 'صديق' : 'تاجر',
       tx.name || '',
-      '="' + (tx.phone || '') + '"',
-      tx.amount
-    ].map(csvCell).join(','));
+      tx.phone || ''
+    ];
+    sheetRows += '<row r="' + r + '">' +
+      vals.map((v, i) => strCell(xlsxColName(i) + r, v)).join('') +
+      '<c r="G' + r + '" s="2"><v>' + amount + '</v></c></row>';
   });
-  return '\uFEFF' + lines.join('\r\n');
+  const tr = rows.length + 2;
+  sheetRows += '<row r="' + tr + '">' + strCell('F' + tr, 'الإجمالي', 1) +
+    '<c r="G' + tr + '" s="3"><f>SUM(G2:G' + (tr - 1) + ')</f><v>' + total + '</v></c></row>';
+
+  const NS = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"';
+  const sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<worksheet ' + NS + '><sheetViews><sheetView rightToLeft="1" workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
+    '<cols>' + widths.map((w, i) => '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>').join('') + '</cols>' +
+    '<sheetData>' + sheetRows + '</sheetData></worksheet>';
+  const styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<styleSheet ' + NS + '><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.00"/></numFmts>' +
+    '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
+    '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+    '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+    '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+    '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
+    '<xf numFmtId="164" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+  return xlsxZip([
+    { name: '[Content_Types].xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>' },
+    { name: '_rels/.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+    { name: 'xl/workbook.xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook ' + NS + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="SwiftPay" sheetId="1" r:id="rId1"/></sheets></workbook>' },
+    { name: 'xl/_rels/workbook.xml.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+    { name: 'xl/styles.xml', data: styles },
+    { name: 'xl/worksheets/sheet1.xml', data: sheet }
+  ]);
 }
+
+function bytesToBase64(bytes) {
+  let bin = '';
+  const step = 0x8000;
+  for (let i = 0; i < bytes.length; i += step) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
+  }
+  return btoa(bin);
+}
+
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 async function exportHistory() {
   const rows = transactionsList
     .filter(tx => txInView(tx) && (historyFilter === 'all' || tx.service === historyFilter))
     .sort((x, y) => new Date(x.timestamp) - new Date(y.timestamp));
   if (!rows.length) { alert('لا توجد عمليات في الفترة المعروضة'); return; }
-  const csv = buildHistoryCsv(rows);
-  const stamp = isRangeMode() ? historyPrefs.from + '_' + historyPrefs.to : toDateInputValue(new Date());
-  const fileName = 'swiftpay-' + stamp + '.csv';
+  // اسم الملف = تاريخ الحركات نفسها (أقدم حركة وأحدث حركة)، وليس تاريخ التحميل
+  const firstDay = toDateInputValue(new Date(rows[0].timestamp));
+  const lastDay = toDateInputValue(new Date(rows[rows.length - 1].timestamp));
+  const stamp = firstDay === lastDay ? firstDay : firstDay + '_' + lastDay;
+  const fileName = 'swiftpay-' + stamp + '.xlsx';
+
+  let bytes;
   try {
-    const file = new File([csv], fileName, { type: 'text/csv' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({ files: [file], title: 'سجل SwiftPay' });
+    bytes = buildHistoryXlsx(rows);
+  } catch (e) {
+    alert('تعذّر إنشاء ملف Excel');
+    return;
+  }
+
+  // 1) تطبيق أندرويد: حفظ في التنزيلات + نافذة المشاركة (WebView لا يدعم تنزيل blob ولا مشاركة الملفات)
+  try {
+    if (window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.FileExport) {
+      await Capacitor.Plugins.FileExport.saveAndShare({
+        fileName: fileName, mime: XLSX_MIME, base64: bytesToBase64(bytes)
+      });
       return;
     }
-    if (navigator.share) {
-      await navigator.share({ title: 'سجل SwiftPay', text: csv });
+  } catch (e) {
+    alert('تعذّر تصدير الملف: ' + ((e && e.message) || ''));
+    return;
+  }
+
+  // 2) المتصفح / PWA
+  try {
+    const file = new File([bytes], fileName, { type: XLSX_MIME });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'سجل SwiftPay' });
       return;
     }
   } catch (e) {
@@ -1506,14 +1646,13 @@ async function exportHistory() {
   }
   try {
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.href = URL.createObjectURL(new Blob([bytes], { type: XLSX_MIME }));
     a.download = fileName;
     document.body.appendChild(a);
     a.click();
     a.remove();
   } catch (e) {
-    try { await navigator.clipboard.writeText(csv); alert('تعذّر إنشاء الملف، تم نسخ البيانات إلى الحافظة'); }
-    catch (e2) { alert('تعذّر تصدير الملف على هذا الجهاز'); }
+    alert('تعذّر تصدير الملف على هذا الجهاز');
   }
 }
 

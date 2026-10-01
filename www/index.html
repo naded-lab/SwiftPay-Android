@@ -63,8 +63,12 @@
 <!-- ===================== شاشة قفل التطبيق (تظهر فوق كل شيء عند تفعيلها) ===================== -->
 <div id="applock-screen">
   <img src="assets/icons/icon-192.png" alt="SwiftPay" class="applock-logo">
-  <div class="applock-title">SwiftPay مقفل</div>
-  <div class="applock-subtitle" id="applock-subtitle">لحماية بياناتك المالية</div>
+  <div class="applock-title brand-text">SwiftPay</div>
+  <div class="applock-subline">
+    <span class="applock-locked">مقفل</span>
+    <span class="applock-sep">•</span>
+    <span class="applock-subtitle" id="applock-subtitle">لحماية بياناتك المالية</span>
+  </div>
   <div class="applock-dots" id="applock-dots">
     <span></span><span></span><span></span><span></span>
   </div>
@@ -88,11 +92,13 @@
 <div class="mobile-app">
 
   <!-- الهيدر -->
-  <header class="app-header">
+  <header class="app-header is-home" id="app-header">
     <button class="icon-btn" id="backBtn" style="visibility:hidden;" onclick="handleBack()">
       <svg class="icon"><use href="#i-arrow-left-chevron"></use></svg>
     </button>
-    <div class="app-title" id="page-title">SwiftPay</div>
+    <div class="app-title-wrap">
+      <div class="app-title brand-text" id="page-title">SwiftPay</div>
+    </div>
     <div class="icon-btn" aria-hidden="true" style="visibility:hidden; pointer-events:none;"></div>
   </header>
 
@@ -268,7 +274,7 @@
         <div class="app-hero-top">
           <img src="assets/icons/icon-192.png" alt="SwiftPay" class="app-hero-logo">
           <div class="app-hero-text">
-            <h3>SwiftPay <span class="ver-badge">v3.0</span></h3>
+            <h3><span class="brand-text">SwiftPay</span></h3>
             <p>مولّد أكواد تحويل ذكي يعمل بالكامل على جهازك دون الحاجة لإنترنت، وبياناتك لا تغادر هاتفك أبداً.</p>
           </div>
          </div>
@@ -346,15 +352,6 @@
       <div class="settings-group-box">
         <div class="settings-item-row">
           <div class="settings-item-left">
-            <div class="settings-item-icon icon-blue"><svg class="icon"><use href="#i-info"></use></svg></div>
-            <div class="settings-item-text">
-              <h4>الإصدار</h4>
-              <p>SwiftPay 3.0 — بنية PWA متعددة الملفات</p>
-            </div>
-          </div>
-        </div>
-        <div class="settings-item-row">
-          <div class="settings-item-left">
             <div class="settings-item-icon icon-purple"><svg class="icon"><use href="#i-code"></use></svg></div>
             <div class="settings-item-text">
               <h4>Nadid Studio</h4>
@@ -372,15 +369,19 @@
   <nav class="bottom-nav">
     <button class="nav-item active" onclick="switchTab('home')" aria-label="الرئيسية">
       <span class="nav-icon-wrap"><svg class="icon"><use href="#i-home"></use></svg></span>
+      <span class="nav-label">الرئيسية</span>
     </button>
     <button class="nav-item" onclick="switchTab('history')" aria-label="السجل">
       <span class="nav-icon-wrap"><svg class="icon"><use href="#i-history"></use></svg></span>
+      <span class="nav-label">السجل</span>
     </button>
-    <button class="nav-item" onclick="switchTab('favorites')" aria-label="المفضلة">
+    <button class="nav-item" onclick="switchTab('favorites')" aria-label="المستفيدون">
       <span class="nav-icon-wrap"><svg class="icon"><use href="#i-star"></use></svg></span>
+      <span class="nav-label">المستفيدون</span>
     </button>
     <button class="nav-item" onclick="switchTab('settings')" aria-label="الإعدادات">
       <span class="nav-icon-wrap"><svg class="icon"><use href="#i-settings"></use></svg></span>
+      <span class="nav-label">الإعدادات</span>
     </button>
   </nav>
 

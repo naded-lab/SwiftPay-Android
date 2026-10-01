@@ -2,11 +2,11 @@
   "appId": "com.nadidstudio.swiftpay",
   "appName": "SwiftPay",
   "webDir": "www",
-  "backgroundColor": "#0D0F11",
+  "backgroundColor": "#FFFFFF",
   "plugins": {
     "SplashScreen": {
       "launchShowDuration": 600,
-      "backgroundColor": "#0D0F11",
+      "backgroundColor": "#FFFFFF",
       "androidSplashResourceName": "splash",
       "androidScaleType": "CENTER_INSIDE",
       "showSpinner": false,

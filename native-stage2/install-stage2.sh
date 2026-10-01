@@ -133,4 +133,65 @@ if 'ContactPickerPlugin' not in s:
     main.write_text(s)
 PY3
 
+echo "==> نسخ FileExportPlugin (تصدير Excel) + FileProvider وتسجيلهما..."
+cp "$ROOT/native-stage2/FileExportPlugin.java" "$PKG_DIR/FileExportPlugin.java"
+cp "$ROOT/native-stage2/ExportFileProvider.java" "$PKG_DIR/ExportFileProvider.java"
+mkdir -p "$ANDROID/app/src/main/res/xml"
+cat > "$ANDROID/app/src/main/res/xml/swiftpay_export_paths.xml" <<'XMLEOF'
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="exports" path="exports/" />
+</paths>
+XMLEOF
+python3 - "$ANDROID" "$MANIFEST" <<'PY4'
+from pathlib import Path
+import sys
+android = Path(sys.argv[1]); manifest = Path(sys.argv[2])
+
+# 1) provider داخل الـ manifest
+m = manifest.read_text(encoding="utf-8")
+if 'ExportFileProvider' not in m:
+    provider = (
+        '        <provider\n'
+        '            android:name="com.nadidstudio.swiftpay.ExportFileProvider"\n'
+        '            android:authorities="${applicationId}.exportprovider"\n'
+        '            android:exported="false"\n'
+        '            android:grantUriPermissions="true">\n'
+        '            <meta-data\n'
+        '                android:name="android.support.FILE_PROVIDER_PATHS"\n'
+        '                android:resource="@xml/swiftpay_export_paths" />\n'
+        '        </provider>\n'
+    )
+    if '</application>' not in m: raise SystemExit('تعذر العثور على </application>')
+    m = m.replace('</application>', provider + '    </application>', 1)
+    manifest.write_text(m, encoding="utf-8")
+
+# 2) تسجيل الـ plugin داخل MainActivity
+files = list((android/'app/src/main').rglob('MainActivity.java')) + list((android/'app/src/main').rglob('MainActivity.kt'))
+if not files: raise SystemExit('لم يتم العثور على MainActivity')
+main = files[0]; s = main.read_text(encoding="utf-8")
+if 'FileExportPlugin' not in s:
+    if main.suffix == '.java':
+        s = s.replace('import com.nadidstudio.swiftpay.UssdPlugin;', 'import com.nadidstudio.swiftpay.UssdPlugin;\nimport com.nadidstudio.swiftpay.FileExportPlugin;', 1)
+        s = s.replace('registerPlugin(UssdPlugin.class);', 'registerPlugin(UssdPlugin.class);\n        registerPlugin(FileExportPlugin.class);', 1)
+    else:
+        s = s.replace('import com.nadidstudio.swiftpay.UssdPlugin', 'import com.nadidstudio.swiftpay.UssdPlugin\nimport com.nadidstudio.swiftpay.FileExportPlugin', 1)
+        s = s.replace('registerPlugin(UssdPlugin::class.java)', 'registerPlugin(UssdPlugin::class.java)\n        registerPlugin(FileExportPlugin::class.java)', 1)
+    main.write_text(s, encoding="utf-8")
+PY4
+
+echo "==> شاشة البداية بخلفية بيضاء على أندرويد 12+ ..."
+python3 - "$ANDROID" <<'PY5'
+from pathlib import Path
+import re, sys
+styles = Path(sys.argv[1]) / 'app/src/main/res/values/styles.xml'
+if styles.exists():
+    t = styles.read_text(encoding="utf-8")
+    m = re.search(r'(<style name="AppTheme\.NoActionBarLaunch"[^>]*>)(.*?)(</style>)', t, re.S)
+    if m and 'windowSplashScreenBackground' not in m.group(2):
+        item = '\n        <item name="windowSplashScreenBackground">#FFFFFF</item>\n    '
+        t = t[:m.end(2)] + item + t[m.end(2):]
+        styles.write_text(t, encoding="utf-8")
+PY5
+
 echo "تم تفعيل UssdPlugin والأذونات والعلامة التجارية (أيقونات + شاشة بداية) بنجاح."

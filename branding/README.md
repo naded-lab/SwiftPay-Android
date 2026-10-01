@@ -25,3 +25,13 @@
   المُولَّد عبر `native-stage2/install-stage2.sh` (نفسه يعمل محلياً وفي CI).
 - `www/assets/icons/` → تُستخدم مباشرة من `www/pwa/manifest.json` ووسوم
   `<link rel="icon">` في `www/index.html`.
+
+---
+
+## تحديث الهوية (الشعار الملوّن الجديد)
+
+- المصدر الآن: `branding/logo-source.png` (شعار S بتدرّج أخضر/أزرق/بنفسجي).
+- التوليد: `python3 scripts/generate_branding.py` (يحتاج pillow + numpy).
+- أيقونة أندرويد التكيّفية = خلفية متدرّجة (`ic_launcher_background.png`) + الشعار (`ic_launcher_foreground.png`)؛
+  الأيقونة التقليدية = الشعار نفسه بلا أي خلفية إضافية.
+- شاشة البداية: خلفية بيضاء + الشعار في المنتصف (لا سواد).
