@@ -1359,3 +1359,99 @@ body.light-theme .hist-range-row input[type="date"] { color-scheme: light; }
 .app-header { padding: calc(4px + var(--safe-top)) 18px 6px; }
 .app-header .icon-btn { width: 36px; height: 36px; }
 .app-header.is-home .app-title.brand-text { font-size: 1.5rem; }
+
+/* =========================================================================
+   إضافات: خيارات العملية، زر التحويل الخارجي، تسجيل تحويل خارجي
+   ========================================================================= */
+
+/* بطاقة ملخّص العملية: الرقم أولاً، تحته الخدمة والمبلغ جنب بعض */
+.txa-summary {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  margin: 12px 0 14px;
+}
+.txa-summary .tx-icon { width: 46px; height: 46px; flex-shrink: 0; font-size: 1.05rem; }
+.txa-info { flex: 1; min-width: 0; }
+.txa-name { font-size: 0.78rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.txa-phone { font-size: 1.08rem; font-weight: 800; direction: ltr; text-align: right; letter-spacing: 0.3px; }
+.txa-meta { display: flex; align-items: center; gap: 8px; margin-top: 7px; flex-wrap: wrap; }
+.txa-chip {
+  font-size: 0.7rem; font-weight: 700;
+  padding: 3px 10px; border-radius: var(--radius-pill);
+  background: var(--primary-bg); color: var(--primary);
+}
+.txa-chip.jawwal { background: var(--jawwal-bg); color: var(--jawwal); }
+.txa-chip.palpay { background: var(--secondary-bg); color: var(--secondary); }
+.txa-chip-ext { background: var(--warning-bg); color: var(--warning); }
+.txa-amount { font-size: 0.86rem; font-weight: 800; }
+
+/* محرّر الاسم داخل قائمة الخيارات */
+.txa-name-editor {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+.txa-name-actions { display: flex; gap: 10px; margin-top: 10px; }
+.txa-name-actions > button { flex: 1; width: auto; margin-top: 0; display: flex; align-items: center; justify-content: center; }
+
+/* شارة "خارجي" على بطاقة السجل */
+.tx-ext-badge {
+  display: inline-block; vertical-align: middle;
+  margin-inline-start: 6px;
+  font-size: 0.6rem; font-weight: 800;
+  padding: 2px 7px; border-radius: var(--radius-pill);
+  background: var(--warning-bg); color: var(--warning);
+}
+
+/* الزر العائم (تبويب السجل فقط) */
+.fab-external {
+  display: none;
+  position: fixed; z-index: 45;
+  left: max(16px, calc((100vw - 480px) / 2 + 16px));
+  bottom: calc(96px + var(--safe-bottom));
+  align-items: center; gap: 8px;
+  padding: 13px 18px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, #12C99A, #1E6BFF);
+  color: #fff; font-weight: 800; font-size: 0.84rem;
+  box-shadow: 0 10px 24px rgba(30, 107, 255, 0.35);
+  transition: transform .15s ease;
+}
+.fab-external:active { transform: scale(0.95); }
+.fab-external .icon { font-size: 1.05rem; stroke-width: 2.6; }
+body.keyboard-open .fab-external { display: none !important; }
+
+/* نافذة تسجيل تحويل خارجي */
+.ext-panel { max-height: 92vh; overflow-y: auto; }
+.label-opt { font-weight: 500; color: var(--text-muted); font-size: 0.72rem; }
+#ext-when { color-scheme: dark; }
+body.light-theme #ext-when { color-scheme: light; }
+
+
+/* =========================================================================
+   شريط التنقل السفلي — الأسماء ظاهرة، دائرة التحديد أصغر
+   ========================================================================= */
+.nav-icon-wrap {
+  width: 44px; height: 28px; border-radius: 12px;
+  transition: background .25s ease, transform .2s cubic-bezier(.2,.9,.3,1), box-shadow .25s ease;
+}
+.nav-item .icon { font-size: 1.3rem; stroke-width: 1.7; color: var(--text-muted); transition: color .2s ease, transform .2s ease; }
+.nav-item.active .icon { color: #fff; stroke-width: 1.9; }
+.nav-item.active .nav-icon-wrap { box-shadow: 0 4px 12px rgba(30, 107, 255, 0.3); }
+.nav-item:active .nav-icon-wrap { transform: scale(0.9); }
+
+/* زر + عائم: دائرة بأيقونة فقط */
+.fab-external {
+  width: 54px; height: 54px; padding: 0;
+  justify-content: center;
+}
+.fab-external .icon { font-size: 1.5rem; }
+
+.txa-phone-name { direction: rtl; font-size: 1rem; }
+
+.fav-hint { font-size: 0.7rem; color: var(--text-muted); text-align: center; margin: 0 0 10px; }
+.favorite-card { touch-action: manipulation; user-select: none; -webkit-user-select: none; }

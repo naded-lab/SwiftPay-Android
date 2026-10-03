@@ -425,6 +425,11 @@ function startWizard(service) {
   document.getElementById('backBtn').style.visibility = 'visible';
   setPageTitle(service === 'jawwal' ? 'تحويل جوال بي' : 'تحويل بال بي');
   selectService(service);
+  // رصيد حديث = مقارنة أدق للمبلغ (تحديث صامت، لا يمنع استخدام الشاشة)
+  if (service === 'jawwal' && isNativeUssdAvailable() && JAWWAL_BALANCE_USSD_CODE &&
+      recentBalanceNumber(60000) === null) {
+    refreshJawwalBalance();
+  }
 }
 
 function selectService(service) {
@@ -446,6 +451,7 @@ function selectService(service) {
   banner.style.display = 'flex';
   document.getElementById('wizard-step-2').style.display = 'block';
   updateTypeToggleUI();
+  validateAmountAgainstBalance();
 }
 
 // النوع (صديق/تاجر) صار مجرد تبديل داخل نفس شاشة البيانات، بدون الانتقال
@@ -500,8 +506,21 @@ function setSubmitLocked(locked) {
   btn.style.opacity = locked ? '0.6' : '';
 }
 
-function serviceLabel(service) { return service === 'jawwal' ? 'جوال بي' : 'بال بي'; }
-function typeLabel(type) { return type === 'friend' ? 'صديق' : 'تاجر'; }
+// الخدمة: جوال بي أو بال بي. النوع: صديق / تاجر، وللتسجيل الخارجي فقط: Sadad / Buraq
+const SERVICE_META = {
+  jawwal: { label: 'جوال بي', letter: 'J' },
+  palpay: { label: 'بال بي', letter: 'P' }
+};
+function svcMeta(service) { return SERVICE_META[service] || SERVICE_META.palpay; }
+function serviceLabel(service) { return svcMeta(service).label; }
+const TYPE_LABELS = { friend: 'صديق', merchant: 'تاجر', sadad: 'Sadad', buraq: 'Buraq' };
+function typeLabel(type) { return TYPE_LABELS[type] || 'تاجر'; }
+// أنواع لا يمكن تنفيذها من التطبيق (تسجيل خارجي فقط): لا إعادة حركة لها
+function isExternalOnlyType(type) { return type === 'sadad' || type === 'buraq'; }
+// عنوان بطاقة العملية: "الخدمة - الاسم أو النوع"
+function txTitle(tx) {
+  return svcMeta(tx.service).label + ' - ' + escapeHtml(tx.name || typeLabel(tx.type));
+}
 
 // اسم المستفيد: من جهة الاتصال المختارة (إن طابق رقمها)، أو من المفضلة، وإلا فارغ
 function resolveBeneficiaryName(phone) {
@@ -515,6 +534,27 @@ function buildUssdCode(service, type, phone, amount, pin) {
     return type === 'friend' ? `*110*1*${pin}*${phone}*${amount}*1#` : `*110*2*${pin}*${phone}*${amount}*1#`;
   }
   return type === 'friend' ? `*370*1*1*${phone}*${amount}#` : `*370*2*${phone}*${amount}#`;
+}
+
+// ---------- مقارنة المبلغ بالرصيد (جوال بي فقط؛ له مصدر رصيد فعلي) ----------
+// تعيد نص الخطأ إن كان المبلغ أكبر من آخر رصيد معروف، وإلا نصاً فارغاً.
+function insufficientBalanceMessage(amountStr) {
+  if (currentService !== 'jawwal') return '';
+  if (balanceState.amount === null) return '';
+  const bal = parseFloat(balanceState.amount);
+  const amt = parseFloat(String(amountStr).replace(',', '.'));
+  if (isNaN(bal) || isNaN(amt) || amt <= 0) return '';
+  if (amt <= bal + 0.005) return '';
+  return balanceState.hidden ? 'الرصيد غير كافٍ' : `الرصيد غير كافٍ — رصيدك الحالي ${formatMoney(bal)} ₪`;
+}
+
+// يُستدعى مع كل كتابة بحقل المبلغ، وعند تغيّر الرصيد أو الخدمة
+function validateAmountAgainstBalance() {
+  const amountEl = document.getElementById('input-amount');
+  if (!amountEl) return;
+  clearFieldError(amountEl);
+  const msg = insufficientBalanceMessage(amountEl.value.trim());
+  if (msg) showFieldError(amountEl, msg);
 }
 
 // الخطوة 1: تحقق من الحقول ثم اعرض حوار التأكيد (لا تنفيذ مباشر)
@@ -543,6 +583,12 @@ function submitTransfer() {
   if (amount === '' || isNaN(amount) || Number(amount) <= 0) {
     showFieldError(amountEl, 'أدخل مبلغاً صحيحاً أكبر من صفر');
     firstInvalid = firstInvalid || amountEl;
+  } else {
+    const lowMsg = insufficientBalanceMessage(amount);
+    if (lowMsg) {
+      showFieldError(amountEl, lowMsg);
+      firstInvalid = firstInvalid || amountEl;
+    }
   }
   if (pinRequired && !/^\d{4}$/.test(pin)) {
     showFieldError(pinEl, 'أدخل رمزاً سرياً مكوناً من 4 أرقام');
@@ -685,6 +731,7 @@ function closeExecScreen() {
   if (ok) {
     document.getElementById('input-phone').value = '';
     document.getElementById('input-amount').value = '';
+    clearFieldError(document.getElementById('input-amount'));
     selectedContact = null;
   }
   resetToHome();
@@ -988,6 +1035,7 @@ function storeBalanceReading(reading) {
   saveToStorage(BALANCE_STORAGE_KEY, balanceState);
   setBalanceMeta('', false);
   renderBalanceCard();
+  validateAmountAgainstBalance();
 }
 
 // آخر قراءة حقيقية إن كانت أحدث من maxAgeMs، وإلا null
@@ -1059,18 +1107,18 @@ function switchTab(tabName) {
   document.getElementById(`${tabName}-view`).classList.add('active-view');
   document.querySelector(`.nav-item:nth-child(${indices[tabName]})`).classList.add('active');
   document.getElementById('backBtn').style.visibility = tabName === 'home' ? 'hidden' : 'visible';
+  const fab = document.getElementById('fab-external');
+  if (fab) fab.style.display = tabName === 'history' ? 'flex' : 'none';
 }
 
 function txCardInner(tx) {
-  const sName = tx.service === 'jawwal' ? 'جوال بي' : 'بال بي';
-  const tName = tx.type === 'friend' ? 'صديق' : 'تاجر';
-  const iconChar = tx.service === 'jawwal' ? 'J' : 'P';
+  const iconChar = svcMeta(tx.service).letter;
   return `
     <div class="tx-right">
       <div class="tx-icon ${tx.service}">${iconChar}</div>
       <div class="tx-details">
-        <h4>${sName} - ${escapeHtml(tx.name || tName)}</h4>
-        <p>${tx.phone}</p>
+        <h4>${txTitle(tx)}</h4>
+        ${tx.phone ? `<p>${escapeHtml(tx.phone)}</p>` : ''}
       </div>
     </div>
     <div class="tx-left">
@@ -1089,14 +1137,12 @@ function historyCard(tx) {
 
 // بطاقة معاينة داخل الرئيسية (آخر 3 عمليات): تعرض التاريخ الذكي كاملاً كما كانت، بلا إجراءات إضافية
 function homePreviewCard(tx) {
-  const sName = tx.service === 'jawwal' ? 'جوال بي' : 'بال بي';
-  const tName = tx.type === 'friend' ? 'صديق' : 'تاجر';
-  const iconChar = tx.service === 'jawwal' ? 'J' : 'P';
+  const iconChar = svcMeta(tx.service).letter;
   return `
     <div class="transaction-card">
       <div class="tx-right">
         <div class="tx-icon ${tx.service}">${iconChar}</div>
-        <div class="tx-details"><h4>${sName} - ${escapeHtml(tx.name || tName)}</h4><p>${tx.phone}</p></div>
+        <div class="tx-details"><h4>${txTitle(tx)}</h4>${tx.phone ? `<p>${escapeHtml(tx.phone)}</p>` : ''}</div>
       </div>
       <div class="tx-left">
         <div class="tx-amount">${tx.amount} شيكل</div>
@@ -1184,7 +1230,7 @@ function computeHistoryStats(period) {
     if (isNaN(a)) return;
     st.total += a;
     st.count++;
-    if (tx.service === 'jawwal') st.jawwal += a; else st.palpay += a;
+    if (tx.service === 'jawwal') st.jawwal += a; else if (tx.service === 'palpay') st.palpay += a;
   });
   return st;
 }
@@ -1378,14 +1424,65 @@ function openTxActions(txId) {
   const tx = transactionsList.find(t => String(t.id) === String(txId));
   if (!tx) return;
   txActionsTargetId = txId;
-  document.getElementById('tx-actions-subtitle').innerText =
-    `${tx.service === 'jawwal' ? 'جوال بي' : 'بال بي'} - ${tx.phone} - ${tx.amount} شيكل`;
+  const svc = svcMeta(tx.service);
+  const typeTxt = ' · ' + typeLabel(tx.type);
+  document.getElementById('txa-summary').innerHTML = `
+    <div class="tx-icon ${tx.service}">${svc.letter}</div>
+    <div class="txa-info">
+      ${tx.phone && tx.name ? `<div class="txa-name">${escapeHtml(tx.name)}</div>` : ''}
+      <div class="txa-phone${tx.phone ? '' : ' txa-phone-name'}">${escapeHtml(tx.phone || tx.name || '')}</div>
+      <div class="txa-meta">
+        <span class="txa-chip ${tx.service}">${svc.label}${typeTxt}</span>
+        <span class="txa-amount">${escapeHtml(tx.amount)} ₪</span>
+      </div>
+    </div>`;
+  // إعادة الحركة تلزمها خدمة تحويل من التطبيق + رقم
+  const repeatBtn = document.getElementById('txa-repeat-btn');
+  if (repeatBtn) repeatBtn.style.display = (!isExternalOnlyType(tx.type) && tx.phone) ? '' : 'none';
+  document.getElementById('txa-name-title').innerText = tx.name ? 'تعديل اسم المستفيد' : 'إضافة اسم للمستفيد';
+  document.getElementById('txa-name-sub').innerText = tx.name
+    ? 'غيّر الاسم أو احذفه'
+    : 'يظهر الاسم بدل النوع في السجل';
+  closeTxNameEditor();
   document.getElementById('tx-actions-backdrop').style.display = 'flex';
 }
 
 function closeTxActions() {
   document.getElementById('tx-actions-backdrop').style.display = 'none';
+  closeTxNameEditor();
   txActionsTargetId = null;
+}
+
+function openTxNameEditor() {
+  const tx = transactionsList.find(t => String(t.id) === String(txActionsTargetId));
+  if (!tx) return;
+  document.getElementById('txa-name-btn').style.display = 'none';
+  document.getElementById('txa-name-editor').style.display = 'block';
+  const input = document.getElementById('txa-name-input');
+  input.value = tx.name || '';
+  input.focus();
+}
+
+function closeTxNameEditor() {
+  const ed = document.getElementById('txa-name-editor');
+  const btn = document.getElementById('txa-name-btn');
+  if (ed) ed.style.display = 'none';
+  if (btn) btn.style.display = '';
+}
+
+// الاسم يخص الرقم: يُطبَّق على كل حركات نفس الرقم. اسم فارغ = حذف الاسم.
+function saveTxName() {
+  const tx = transactionsList.find(t => String(t.id) === String(txActionsTargetId));
+  if (!tx) return;
+  const name = document.getElementById('txa-name-input').value.trim();
+  transactionsList.forEach(t => {
+    const same = tx.phone ? t.phone === tx.phone : t === tx;
+    if (!same) return;
+    if (name) t.name = name; else delete t.name;
+  });
+  saveToStorage(STORAGE_KEYS.tx, transactionsList);
+  renderHistory();
+  closeTxActions();
 }
 
 function deleteTransactionFromActions() {
@@ -1398,8 +1495,8 @@ function deleteTransactionFromActions() {
   showUndoSnackbar(removed);
 }
 
-// إعادة الحركة: تفتح المعالج مباشرة مع تعبئة نفس الرقم والمبلغ (والخدمة/النوع) دون طلب
-// إعادة كتابتها، تاركاً حقل الرمز السري فارغاً ليُدخله المستخدم من جديد لأسباب أمنية.
+// إعادة الحركة: تفتح المعالج مباشرة مع تعبئة نفس الرقم (والخدمة/النوع) فقط؛ المبلغ يُترك
+// فارغاً ليُدخله المستخدم، والمؤشر ينتقل له مباشرة.
 function repeatTransactionFromActions() {
   const tx = transactionsList.find(t => String(t.id) === String(txActionsTargetId));
   closeTxActions();
@@ -1408,8 +1505,9 @@ function repeatTransactionFromActions() {
   setTimeout(() => {
     selectTransferType(tx.type);
     document.getElementById('input-phone').value = tx.phone;
-    document.getElementById('input-amount').value = tx.amount;
+    document.getElementById('input-amount').value = '';
     if (tx.name) selectedContact = { name: tx.name, phone: tx.phone };
+    document.getElementById('input-amount').focus();
   }, 100);
 }
 
@@ -1553,8 +1651,8 @@ function buildHistoryXlsx(rows) {
     const vals = [
       d.getFullYear() + '/' + pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()),
       pad2(d.getHours()) + ':' + pad2(d.getMinutes()),
-      tx.service === 'jawwal' ? 'جوال بي' : 'بال بي',
-      tx.type === 'friend' ? 'صديق' : 'تاجر',
+      serviceLabel(tx.service),
+      typeLabel(tx.type),
       tx.name || '',
       tx.phone || ''
     ];
@@ -1658,23 +1756,54 @@ async function exportHistory() {
 
 function clearHistory() { clearHistoryScope('all'); }
 
-function showAddFavoriteModal() { document.getElementById('add-favorite-modal').style.display = 'block'; }
+let editingFavId = null; // null = إضافة جديدة، غير ذلك = تعديل مستفيد موجود
+
+function setFavModalMode(editing) {
+  document.getElementById('fav-modal-title').innerText = editing ? 'تعديل بيانات المستفيد' : 'إضافة مستفيد للمفضلة';
+  document.getElementById('fav-modal-desc').innerText = editing
+    ? 'غيّر الاسم أو الرقم، والتحويلات القادمة بتروح للرقم الجديد'
+    : 'احفظ بيانات مستفيد لتحويل سريع لاحقاً';
+}
+
+function showAddFavoriteModal() {
+  editingFavId = null;
+  setFavModalMode(false);
+  document.getElementById('add-favorite-modal').style.display = 'flex';
+}
+
+// تعديل مستفيد: نفس نافذة الإضافة لكن معبّأة ببياناته الحالية
+function showEditFavoriteModal(id) {
+  const fav = favoritesList.find(f => f.id === id);
+  if (!fav) return;
+  editingFavId = id;
+  setFavModalMode(true);
+  document.getElementById('fav-name').value = fav.name || '';
+  document.getElementById('fav-phone').value = fav.phone || '';
+  document.getElementById('fav-service').value = fav.service;
+  document.getElementById('fav-type').value = fav.type;
+  document.getElementById('add-favorite-modal').style.display = 'flex';
+}
+
 function hideAddFavoriteModal() {
   document.getElementById('add-favorite-modal').style.display = 'none';
   document.getElementById('fav-name').value = '';
   document.getElementById('fav-phone').value = '';
+  editingFavId = null;
 }
 
 function saveNewFavorite() {
   const name = document.getElementById('fav-name').value.trim();
   const phone = document.getElementById('fav-phone').value.trim();
   if (!name || !phone) { alert('الرجاء إدخال الاسم ورقم الهاتف!'); return; }
+  const service = document.getElementById('fav-service').value;
+  const type = document.getElementById('fav-type').value;
 
-  favoritesList.push({
-    id: Date.now(), name, phone,
-    service: document.getElementById('fav-service').value,
-    type: document.getElementById('fav-type').value
-  });
+  if (editingFavId !== null) {
+    const fav = favoritesList.find(f => f.id === editingFavId);
+    if (fav) Object.assign(fav, { name, phone, service, type });
+  } else {
+    favoritesList.push({ id: Date.now(), name, phone, service, type });
+  }
   saveToStorage(STORAGE_KEYS.fav, favoritesList);
   renderFavorites();
   hideAddFavoriteModal();
@@ -1694,17 +1823,18 @@ function renderFavorites() {
     return;
   }
 
-  container.innerHTML = favoritesList.map(fav => {
+  const hint = '<div class="fav-hint">اضغط ضغطتين على المستفيد لتعديل اسمه أو رقمه</div>';
+  container.innerHTML = hint + favoritesList.map(fav => {
     const sName = fav.service === 'jawwal' ? 'جوال بي' : 'بال بي';
     const tName = fav.type === 'friend' ? 'صديق' : 'تاجر';
     const iconChar = fav.service === 'jawwal' ? 'J' : 'P';
     return `
-      <div class="favorite-card" onclick="quickTransfer('${fav.service}', '${fav.type}', '${fav.phone}')">
+      <div class="favorite-card" onclick="onFavoriteTap(${fav.id})">
         <div style="display: flex; align-items: center; gap: 12px;">
           <div class="tx-icon ${fav.service}">${iconChar}</div>
           <div>
-            <h4 style="font-size: 0.95rem;">${fav.name}</h4>
-            <p style="font-size: 0.75rem; color: var(--text-secondary);">${sName} (${tName}) - ${fav.phone}</p>
+            <h4 style="font-size: 0.95rem;">${escapeHtml(fav.name)}</h4>
+            <p style="font-size: 0.75rem; color: var(--text-secondary);">${sName} (${tName}) - ${escapeHtml(fav.phone)}</p>
           </div>
         </div>
         <button class="fav-del-btn" onclick="deleteFavorite(${fav.id}, event)"><svg class="icon"><use href="#i-trash-can"></use></svg></button>
@@ -1713,7 +1843,116 @@ function renderFavorites() {
   }).join('');
 }
 
+// ضغطة وحدة = تحويل سريع، ضغطتين = تعديل. ننتظر لحظة بعد الضغطة الأولى لنعرف إن كانت ستأتي ثانية.
+const DOUBLE_TAP_MS = 320;
+let favTapTimer = null;
+let favTapId = null;
+
+function onFavoriteTap(id) {
+  if (favTapTimer && favTapId === id) {
+    clearTimeout(favTapTimer);
+    favTapTimer = null; favTapId = null;
+    showEditFavoriteModal(id);
+    return;
+  }
+  clearTimeout(favTapTimer);
+  favTapId = id;
+  favTapTimer = setTimeout(() => {
+    favTapTimer = null; favTapId = null;
+    const fav = favoritesList.find(f => f.id === id);
+    if (fav) quickTransfer(fav.service, fav.type, fav.phone);
+  }, DOUBLE_TAP_MS);
+}
+
 function quickTransfer(service, type, phone) {
   startWizard(service);
   setTimeout(() => { selectTransferType(type); document.getElementById('input-phone').value = phone; }, 100);
 }
+
+
+// ================= تسجيل تحويل خارجي (نُفّذ خارج التطبيق) =================
+function nowForDateTimeInput() {
+  const d = new Date();
+  return toDateInputValue(d) + 'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+}
+
+function openExternalTx() {
+  ['ext-name', 'ext-phone', 'ext-amount'].forEach(id => {
+    const el = document.getElementById(id);
+    el.value = '';
+    clearFieldError(el);
+  });
+  clearFieldError(document.getElementById('ext-when'));
+  document.getElementById('ext-service').value = (historyFilter === 'palpay') ? 'palpay' : 'jawwal';
+  document.getElementById('ext-type').value = 'friend';
+  const when = document.getElementById('ext-when');
+  when.max = nowForDateTimeInput();
+  when.value = nowForDateTimeInput();
+  document.getElementById('ext-tx-backdrop').style.display = 'flex';
+}
+
+function closeExternalTx() {
+  document.getElementById('ext-tx-backdrop').style.display = 'none';
+}
+
+// الاسم والرقم: يكفي واحد منهما (لا بد من أحدهما على الأقل)
+function saveExternalTx() {
+  const nameEl = document.getElementById('ext-name');
+  const phoneEl = document.getElementById('ext-phone');
+  const amountEl = document.getElementById('ext-amount');
+  const whenEl = document.getElementById('ext-when');
+  clearFieldError(nameEl);
+  clearFieldError(phoneEl);
+  clearFieldError(amountEl);
+  clearFieldError(whenEl);
+
+  const name = nameEl.value.trim();
+  const rawPhone = phoneEl.value.trim();
+  const phone = rawPhone ? normalizePalestinePhone(rawPhone) : '';
+  const amount = amountEl.value.trim().replace(',', '.');
+  const when = whenEl.value ? new Date(whenEl.value) : new Date();
+  let firstInvalid = null;
+
+  if (!name && !rawPhone) {
+    showFieldError(nameEl, 'اكتب الاسم أو الرقم على الأقل');
+    firstInvalid = nameEl;
+  } else if (rawPhone && !/^0\d{8,9}$/.test(phone)) {
+    showFieldError(phoneEl, 'أدخل رقم هاتف صحيح (مثال: 0591234567)');
+    firstInvalid = phoneEl;
+  }
+  if (amount === '' || isNaN(amount) || Number(amount) <= 0) {
+    showFieldError(amountEl, 'أدخل مبلغاً صحيحاً أكبر من صفر');
+    firstInvalid = firstInvalid || amountEl;
+  }
+  if (isNaN(when.getTime()) || when.getTime() > Date.now() + 60000) {
+    showFieldError(whenEl, 'اختر تاريخاً ووقتاً صحيحين (لا يمكن أن يكونا بالمستقبل)');
+    firstInvalid = firstInvalid || whenEl;
+  }
+  if (firstInvalid) { firstInvalid.focus(); return; }
+
+  const service = document.getElementById('ext-service').value;
+  const rec = {
+    id: (crypto.randomUUID ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2))),
+    service: service,
+    type: document.getElementById('ext-type').value,
+    phone: phone,
+    amount: String(Number(amount)),
+    timestamp: when.getTime(),
+    code: null
+  };
+  // الاسم: المكتوب هنا، وإلا اسم محفوظ لنفس الرقم (إن وُجد رقم)
+  const known = name || (phone ? ((transactionsList.find(t => t.phone === phone && t.name) || {}).name || resolveBeneficiaryName(phone)) : '');
+  if (known) rec.name = known;
+
+  transactionsList.push(rec);
+  transactionsList.sort((x, y) => new Date(y.timestamp) - new Date(x.timestamp));
+  saveToStorage(STORAGE_KEYS.tx, transactionsList);
+  renderHistory();
+  closeExternalTx();
+}
+
+// مقارنة المبلغ بالرصيد أثناء الكتابة
+(function () {
+  const amountEl = document.getElementById('input-amount');
+  if (amountEl) amountEl.addEventListener('input', validateAmountAgainstBalance);
+})();

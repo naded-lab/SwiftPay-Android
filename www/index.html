@@ -57,6 +57,10 @@
   <symbol id="i-swap" viewBox="0 0 24 24"><path d="M7 4v13M7 17l-3.5-3.5M7 17l3.5-3.5"/><path d="M17 20V7M17 7l3.5 3.5M17 7l-3.5 3.5"/></symbol>
   <symbol id="i-signal" viewBox="0 0 24 24"><rect x="3" y="14" width="4" height="7" rx="1"/><rect x="10" y="10" width="4" height="11" rx="1"/><rect x="17" y="5" width="4" height="16" rx="1"/></symbol>
   <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <!-- أيقونات الشريط السفلي (Duotone): تعبئة خفيفة + حدّ -->
+  <symbol id="i-nav-home" viewBox="0 0 24 24"><path d="M4 10.2 12 3.5l8 6.7V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8.8Z" fill="currentColor" fill-opacity=".22"/><path d="M4 10.2 12 3.5l8 6.7V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8.8Z"/><path d="M9.5 21v-5.2a2.5 2.5 0 0 1 5 0V21"/></symbol>
+  <symbol id="i-nav-history" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor" fill-opacity=".22"/><circle cx="12" cy="12" r="9"/><path d="M12 6.8V12l3.6 2.2"/></symbol>
+  <symbol id="i-nav-group" viewBox="0 0 24 24"><circle cx="5.6" cy="9.2" r="2.5" fill="currentColor" fill-opacity=".3"/><circle cx="18.4" cy="9.2" r="2.5" fill="currentColor" fill-opacity=".3"/><path d="M1.8 18.5c.2-2.6 1.9-4.4 4.2-4.6M22.2 18.5c-.2-2.6-1.9-4.4-4.2-4.6" stroke-opacity=".7"/><circle cx="5.6" cy="9.2" r="2.5" stroke-opacity=".7"/><circle cx="18.4" cy="9.2" r="2.5" stroke-opacity=".7"/><circle cx="12" cy="8" r="3.4" fill="currentColor" fill-opacity=".38"/><circle cx="12" cy="8" r="3.4"/><path d="M5.8 20.2v-.9c0-3 2.6-5.2 6.2-5.2s6.2 2.2 6.2 5.2v.9a.9.9 0 0 1-.9.9H6.7a.9.9 0 0 1-.9-.9Z" fill="currentColor" fill-opacity=".38"/><path d="M5.8 20.2v-.9c0-3 2.6-5.2 6.2-5.2s6.2 2.2 6.2 5.2v.9a.9.9 0 0 1-.9.9H6.7a.9.9 0 0 1-.9-.9Z"/></symbol>
   <symbol id="i-star-plus" viewBox="0 0 24 24"><path d="m12 3 2.6 5.5 6 .8-4.4 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6-4.4-4.2 6-.8L12 3Z"/></symbol>
 </svg>
 
@@ -368,15 +372,15 @@
   <!-- شريط التنقل السفلي -->
   <nav class="bottom-nav">
     <button class="nav-item active" onclick="switchTab('home')" aria-label="الرئيسية">
-      <span class="nav-icon-wrap"><svg class="icon"><use href="#i-home"></use></svg></span>
+      <span class="nav-icon-wrap"><svg class="icon"><use href="#i-nav-home"></use></svg></span>
       <span class="nav-label">الرئيسية</span>
     </button>
     <button class="nav-item" onclick="switchTab('history')" aria-label="السجل">
-      <span class="nav-icon-wrap"><svg class="icon"><use href="#i-history"></use></svg></span>
+      <span class="nav-icon-wrap"><svg class="icon"><use href="#i-nav-history"></use></svg></span>
       <span class="nav-label">السجل</span>
     </button>
     <button class="nav-item" onclick="switchTab('favorites')" aria-label="المستفيدون">
-      <span class="nav-icon-wrap"><svg class="icon"><use href="#i-star"></use></svg></span>
+      <span class="nav-icon-wrap"><svg class="icon"><use href="#i-nav-group"></use></svg></span>
       <span class="nav-label">المستفيدون</span>
     </button>
     <button class="nav-item" onclick="switchTab('settings')" aria-label="الإعدادات">
@@ -397,8 +401,8 @@
     <div class="sheet-header-row">
       <div class="sheet-header-icon"><svg class="icon"><use href="#i-star-plus"></use></svg></div>
       <div>
-        <h3>إضافة مستفيد للمفضلة</h3>
-        <p class="sheet-desc">احفظ بيانات مستفيد لتحويل سريع لاحقاً</p>
+        <h3 id="fav-modal-title">إضافة مستفيد للمفضلة</h3>
+        <p class="sheet-desc" id="fav-modal-desc">احفظ بيانات مستفيد لتحويل سريع لاحقاً</p>
       </div>
     </div>
 
@@ -579,19 +583,38 @@
   <button type="button" onclick="undoDelete()">تراجع</button>
 </div>
 
-<!-- إجراءات عملية من السجل: حذف / إعادة -->
+<!-- إجراءات عملية من السجل: اسم / إعادة / حذف -->
 <div class="sheet-backdrop" id="tx-actions-backdrop" style="display:none;" onclick="if(event.target===this) closeTxActions()">
   <div class="sheet-panel">
     <div class="sheet-handle"></div>
     <h3>خيارات العملية</h3>
-    <p class="sheet-desc" id="tx-actions-subtitle"></p>
+
+    <div class="txa-summary" id="txa-summary"></div>
 
     <div class="tx-actions-list">
-      <button class="tx-action-item" onclick="repeatTransactionFromActions()">
+      <button class="tx-action-item" id="txa-name-btn" onclick="openTxNameEditor()">
+        <span class="tx-action-icon"><svg class="icon"><use href="#i-user"></use></svg></span>
+        <span>
+          <strong id="txa-name-title">إضافة اسم للمستفيد</strong>
+          <small id="txa-name-sub">يظهر الاسم بدل النوع في السجل</small>
+        </span>
+      </button>
+      <div class="txa-name-editor" id="txa-name-editor" style="display:none;">
+        <div class="input-wrapper">
+          <input type="text" id="txa-name-input" placeholder="اسم المستفيد" maxlength="40" onkeydown="if(event.key==='Enter') saveTxName()">
+          <span class="input-icon"><svg class="icon"><use href="#i-user"></use></svg></span>
+        </div>
+        <div class="txa-name-actions">
+          <button type="button" class="btn-secondary-flat" onclick="closeTxNameEditor()">إلغاء</button>
+          <button type="button" class="create-new-btn" style="margin-top:0;" onclick="saveTxName()">حفظ</button>
+        </div>
+      </div>
+
+      <button class="tx-action-item" id="txa-repeat-btn" onclick="repeatTransactionFromActions()">
         <span class="tx-action-icon"><svg class="icon"><use href="#i-refresh"></use></svg></span>
         <span>
           <strong>إعادة الحركة</strong>
-          <small>إنشاء كود جديد لنفس الرقم والمبلغ</small>
+          <small>تحويل جديد لنفس الرقم</small>
         </span>
       </button>
       <button class="tx-action-item tx-action-danger" onclick="deleteTransactionFromActions()">
@@ -605,6 +628,89 @@
 
     <div class="sheet-actions">
       <button class="btn-secondary-flat" onclick="closeTxActions()">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- زر عائم: تسجيل تحويل خارجي (يظهر في تبويب السجل فقط) -->
+<button type="button" class="fab-external" id="fab-external" onclick="openExternalTx()" aria-label="تسجيل تحويل خارجي">
+  <svg class="icon"><use href="#i-plus"></use></svg>
+</button>
+
+<!-- تسجيل تحويل تم خارج التطبيق -->
+<div class="sheet-backdrop" id="ext-tx-backdrop" style="display:none;" onclick="if(event.target===this) closeExternalTx()">
+  <div class="sheet-panel ext-panel">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header-row">
+      <div class="sheet-header-icon"><svg class="icon"><use href="#i-swap"></use></svg></div>
+      <div>
+        <h3>تسجيل تحويل خارجي</h3>
+        <p class="sheet-desc">سجّل تحويلاً نفّذته من خارج التطبيق ليظهر في السجل والإحصائيات</p>
+      </div>
+    </div>
+
+    <div class="input-group">
+      <label>الاسم <span class="label-opt">(اختياري إذا كتبت الرقم)</span></label>
+      <div class="input-wrapper">
+        <input type="text" id="ext-name" placeholder="اسم المستفيد" maxlength="40">
+        <span class="input-icon"><svg class="icon"><use href="#i-user"></use></svg></span>
+      </div>
+    </div>
+
+    <div class="input-group">
+      <label>رقم الهاتف <span class="label-opt">(اختياري إذا كتبت الاسم)</span></label>
+      <div class="input-wrapper">
+        <input type="tel" id="ext-phone" placeholder="05XXXXXXXX" inputmode="numeric" maxlength="10">
+        <span class="input-icon"><svg class="icon"><use href="#i-phone-call"></use></svg></span>
+      </div>
+    </div>
+
+    <div class="input-group">
+      <label>المبلغ (شيكل)</label>
+      <div class="input-wrapper">
+        <input type="text" id="ext-amount" placeholder="0.00" inputmode="decimal">
+      </div>
+    </div>
+
+    <div class="favorite-modal-row">
+      <div class="input-group">
+        <label>الخدمة</label>
+        <div class="input-wrapper input-wrapper-select">
+          <select id="ext-service">
+            <option value="jawwal">جوال بي</option>
+            <option value="palpay">بال بي</option>
+          </select>
+          <span class="input-icon"><svg class="icon"><use href="#i-signal"></use></svg></span>
+          <span class="select-chevron"><svg class="icon"><use href="#i-chevron-down"></use></svg></span>
+        </div>
+      </div>
+      <div class="input-group">
+        <label>نوع التحويل</label>
+        <div class="input-wrapper input-wrapper-select">
+          <select id="ext-type">
+            <option value="friend">صديق</option>
+            <option value="merchant">تاجر</option>
+            <option value="sadad">Sadad</option>
+            <option value="buraq">Buraq</option>
+          </select>
+          <span class="input-icon"><svg class="icon"><use href="#i-swap"></use></svg></span>
+          <span class="select-chevron"><svg class="icon"><use href="#i-chevron-down"></use></svg></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-group">
+      <label>التاريخ والوقت</label>
+      <div class="input-wrapper">
+        <input type="datetime-local" id="ext-when">
+      </div>
+    </div>
+
+    <div class="sheet-actions">
+      <button class="btn-secondary-flat" onclick="closeExternalTx()">إلغاء</button>
+      <button class="create-new-btn" style="margin-top:0;" onclick="saveExternalTx()">
+        <svg class="icon" style="font-size:0.9rem; vertical-align:-2px; margin-left:6px;"><use href="#i-check"></use></svg> حفظ
+      </button>
     </div>
   </div>
 </div>
